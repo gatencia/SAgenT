@@ -1,0 +1,12 @@
+# Environment Variables (Secrets)
+.env
+
+# Python compilation
+__pycache__/
+*.pyc
+
+# System
+.DS_Store
+
+# Benchmark Artifacts
+bench/runs/
