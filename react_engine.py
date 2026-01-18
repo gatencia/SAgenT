@@ -813,8 +813,27 @@ class ReActAgent:
             if clean_raw.endswith("```"):
                 clean_raw = clean_raw[:-3].strip()
         
-        data = json.loads(clean_raw)
+        try:
+            data = json.loads(clean_raw)
+        except Exception:
+             # Try unescaping if it's a string repr of a dict (common weak LLM failure)
+             try:
+                 import ast
+                 data = ast.literal_eval(clean_raw)
+             except:
+                 pass
+
         if "action" not in data: raise ValueError("No action")
+        
+        # --- ROBUSTNESS PATCH FOR LOCAL MODELS ---
+        # Map common hallucinations (e.g. from Llama 3) to valid Enums
+        act = data["action"]
+        if act == "CREATE_VARIABLES": act = "DEFINE_VARIABLES"
+        if act == "CREATE_CONSTRAINTS": act = "ADD_MODEL_CONSTRAINTS"
+        if act == "ADD_CONSTRAINTS": act = "ADD_MODEL_CONSTRAINTS"
+        data["action"] = act
+        # -----------------------------------------
+
         try: data["action"] = ActionType(data["action"])
         except: raise ValueError(f"Invalid ActionType: {data.get('action')}")
         return data
