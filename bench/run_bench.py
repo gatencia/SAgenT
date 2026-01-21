@@ -14,9 +14,9 @@ from typing import Dict, Any, Callable
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from react_engine import ReActAgent, AgentState
+    from engine import ReActAgent, AgentState
 except ImportError:
-    print("Error: Could not import ReActAgent from ../react_engine.py")
+    print("Error: Could not import ReActAgent from engine package")
     sys.exit(1)
 
 # Manual .env loading to avoid dependencies

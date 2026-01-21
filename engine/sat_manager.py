@@ -1,0 +1,488 @@
+import copy
+import json
+import uuid
+import random
+from typing import List, Dict, Any, Optional
+
+from engine.state import AgentState, ModelingConstraint
+from engine.backends.registry import IRBackendRegistry
+
+# PySAT imports
+try:
+    from pysat.solvers import Solver
+except ImportError:
+    Solver = Any
+
+class SATManager:
+    def __init__(self, registry: Optional[IRBackendRegistry] = None):
+        self.solver_name = 'g3'
+        self.registry = registry if registry else IRBackendRegistry()
+
+    def _compile(self, state: AgentState):
+        """JIT compilation with Telemetry."""
+        backend = self.registry.get(state.active_ir_backend)
+        valid = []
+        for c in state.model_constraints:
+            if c.ir_backend != state.active_ir_backend:
+                raise ValueError(f"Mixed backend constraint {c.id}")
+            backend.validate_constraint(c, state)
+            valid.append(c)
+        
+        # Incremental Compilation for Telemetry
+        clauses = []
+        report = {
+            "num_user_vars": len(state.sat_variables),
+            "max_var_id": state.next_var_id,
+            "num_aux_vars": 0,
+            "num_clauses": 0,
+            "clauses_by_constraint_id": {},
+            "aux_vars_by_constraint_id": {} # Not easily tracked with PySAT encodings but placeholders
+        }
+
+        # Deterministic Sort
+        valid.sort(key=lambda x: x.id)
+
+        current_max = state.next_var_id
+        if state.sat_variables:
+             current_max = max(max(state.sat_variables.values()) + 1, current_max)
+
+        # Baseline aux var start
+        start_aux = current_max
+
+        # We must compile cumulatively or restart var pools? 
+        # PySAT encoders usually take `top_id`. 
+        # For simplicity AND correctness, we will just measure clause diffs. 
+        # We assume compile_constraints handles list. Ideally we'd compile one by one?
+        # But 'alldifferent' etc might be optimized in groups. 
+        # Let's try one-by-one for telemetry, accepting potential optimization loss if backend allows.
+        # PBBackend compiles one-by-one mostly.
+
+        for c in valid:
+             # Capture state before
+             prev_count = len(clauses)
+             
+             # Compile single
+             # NOTE: compile_constraints expects a list.
+             new_c_clauses = backend.compile_constraints([c], state)
+             
+             # Update IDs? 
+             # The backend uses `state.next_var_id` or similar. 
+             # We need to make sure we don't overlap IDs if we just loop.
+             # Actually `compile_constraints` logic inside PBBackend uses `top_id` from state.
+             # We need to update state.next_var_id as we go to simulate cumulative build.
+             
+             # Wait, `compile_constraints` implementation re-reads `top_id` from state every time?
+             # Let's look at PBBackend: it determines `top_id` from `state.next_var_id - 1`.
+             # AND it calculates `top_id` from max literal in produced clauses.
+             # BUT it does NOT update `state.next_var_id`. 
+             # So if we call it in a loop without updating state, we reuse IDs!
+             
+             # FIX: We need to manually update state.next_var_id between calls for telemetry to work correctly.
+             # But this modifies state! `_compile` is supposed to modify state. So this is fine.
+             
+             clauses.extend(new_c_clauses)
+             
+             # Update watermark
+             local_max = start_aux
+             for cl in new_c_clauses:
+                 for l in cl:
+                     local_max = max(local_max, abs(l))
+             
+             state.next_var_id = local_max + 1
+             
+             count = len(new_c_clauses)
+             report["clauses_by_constraint_id"][c.id] = count
+        
+        state.cnf_clauses = clauses
+        report["num_clauses"] = len(clauses)
+        report["num_aux_vars"] = state.next_var_id - start_aux
+        report["max_var_id"] = state.next_var_id
+        
+        state.compile_report = report
+
+        # Sanity Guard
+        for i, c in enumerate(state.cnf_clauses):
+            if not c: raise ValueError(f"Empty clause produced at index {i}")
+            for l in c:
+                if l == 0: raise ValueError(f"Zero literal in clause {i}")
+
+    def compile_subset(self, state: AgentState, subset: List[ModelingConstraint]) -> List[List[int]]:
+        """Helper to compile a subset of constraints without modifying state."""
+        # Deep isolation
+        temp_state = copy.copy(state)
+        temp_state.cnf_clauses = []
+        
+        # Re-compute watermark to ensure no collision with existing CNF vars if any
+        max_used = 0
+        if state.sat_variables:
+            max_used = max(state.sat_variables.values())
+        for c in state.cnf_clauses: # Check ORIGINAL clauses for high water mark
+            for l in c:
+                max_used = max(max_used, abs(l))
+        temp_state.next_var_id = max_used + 1
+        
+        backend = self.registry.get(state.active_ir_backend)
+        for c in subset:
+             if c.ir_backend != state.active_ir_backend:
+                 raise ValueError("Backend mismatch in subset")
+             try: 
+                 backend.validate_constraint(c, temp_state)
+             except Exception as e:
+                 raise ValueError(f"Invalid subset constraint {c.id} ({c.kind}): {e}")
+        
+        return backend.compile_constraints(subset, temp_state)
+
+    def solve_cnf_under_assumptions(self, cnf_clauses: List[List[int]], assumptions: List[str], state: AgentState) -> str:
+        assumption_ints = []
+        for lit in assumptions:
+            is_neg = str(lit).startswith('-') or str(lit).startswith('~')
+            atom = str(lit).lstrip('-~')
+            if atom not in state.sat_variables: return "ERROR_VAR"
+            vid = state.sat_variables[atom]
+            assumption_ints.append(-vid if is_neg else vid)
+        
+        try:
+            solver = Solver(name=self.solver_name, bootstrap_with=cnf_clauses)
+            sat = solver.solve(assumptions=assumption_ints)
+            solver.delete()
+            return "SAT" if sat else "UNSAT"
+        except Exception as e:
+            return f"ERROR:{str(e)}"
+
+    def fuzz_constraints(self, state: AgentState, payload: Dict[str, Any]) -> str:
+        c_ids = payload.get("constraint_ids", [])
+        num_tests = payload.get("num_tests", 10)
+        mode = payload.get("mode", "both")
+        
+        results = {"tested": 0, "total_tests": 0, "failures": 0, "failure_examples": []}
+        
+        # Map ID to constraint
+        c_map = {c.id: c for c in state.model_constraints}
+        
+        # Literal Helpers
+        def neg(lit: str) -> str:
+             if lit.startswith('-'): return lit[1:]
+             if lit.startswith('~'): return lit[1:]
+             return f"-{lit}"
+
+        def assert_lit(lit: str, truth: bool) -> str:
+             return lit if truth else neg(lit)
+
+        for cid in c_ids:
+            if cid not in c_map: continue
+            constr = c_map[cid]
+            results["tested"] += 1
+            
+            # Setup Subset
+            subset = [constr]
+            # Heuristic background inclusion for alldifferent
+            if constr.kind == "alldifferent_onehot":
+                groups = constr.parameters["groups"]
+                # For each group, try to find an exactly_one constraint defined on it
+                for g in groups:
+                    g_set = set(g)
+                    for other in state.model_constraints:
+                        if other.kind == "exactly_one" and set(other.parameters.get("vars", [])) == g_set:
+                            subset.append(other)
+            
+            try:
+                cnf = self.compile_subset(state, subset)
+            except Exception as e:
+                # If compilation fails, log it
+                results["failures"] += 1
+                results["failure_examples"].append({"id": cid, "error": str(e)})
+                continue
+
+            # Deterministic RNG
+            rng = random.Random(cid)
+            
+            # Generate Tests
+            targets = [] # List of (assumptions, expected_outcome, metadata)
+            
+            def gen_tests(n, positive: bool):
+                generated = [] # List of (assumptions, metadata)
+                p = constr.parameters
+                k = constr.kind
+                
+                for _ in range(n):
+                    meta = {}
+                    assumps = []
+                    valid_gen = False
+
+                    if k == "implies":
+                         # implies(a,b). Pos: -a OR (a,b). Neg: (a, -b)
+                         a, b = p["a"], p["b"]
+                         if positive:
+                             if rng.choice([True, False]): # -a
+                                 assumps = [neg(a)]
+                             else: # a, b
+                                 assumps = [a, b]
+                         else: # a, -b
+                             assumps = [a, neg(b)]
+                         valid_gen = True
+
+                    elif k in ["at_most_k", "at_least_k", "exactly_k", "exactly_one"]:
+                        vs = p["vars"]
+                        target_k = p.get("k", 1)
+                        if k == "exactly_one": target_k = 1
+                        
+                        # Helpers based on indices
+                        if positive:
+                             # Try to satisfy
+                             if target_k <= len(vs) and target_k >= 0:
+                                 # Pick exactly target_k true
+                                 true_idxs = set(rng.sample(range(len(vs)), target_k))
+                                 assumps = [assert_lit(v, i in true_idxs) for i,v in enumerate(vs)]
+                                 valid_gen = True
+                        else:
+                             # Try to violate
+                             options = []
+                             if k in ["at_most_k", "exactly_k", "exactly_one"] and target_k < len(vs):
+                                 options.append(target_k + 1)
+                             if k in ["at_least_k", "exactly_k", "exactly_one"] and target_k > 0:
+                                 options.append(target_k - 1)
+                             
+                             if options:
+                                 fk = rng.choice(options)
+                                 true_idxs = set(rng.sample(range(len(vs)), fk))
+                                 assumps = [assert_lit(v, i in true_idxs) for i,v in enumerate(vs)]
+                                 valid_gen = True
+
+                    elif k in ["linear_leq", "linear_eq"]:
+                        terms = p["terms"]
+                        rhs = int(p["rhs"])
+                        
+                        # 1. Unique Atoms
+                        atoms = set()
+                        for t in terms: 
+                            atoms.add(str(t["var"]).lstrip('-~'))
+                        
+                        # 2. Assign Atoms
+                        atom_vals = {a: rng.choice([True, False]) for a in atoms}
+                        
+                        # 3. Compute LHS
+                        lhs_val = 0
+                        for t in terms:
+                            v = str(t["var"])
+                            coef = int(t["coef"])
+                            atom = v.lstrip('-~')
+                            is_neg = v.startswith('-') or v.startswith('~')
+                            
+                            # Truth of literal
+                            a_val = atom_vals[atom]
+                            lit_true = a_val if not is_neg else (not a_val)
+                            
+                            if lit_true: lhs_val += coef
+                            
+                        # 4. Check Math
+                        math_sat = (lhs_val <= rhs) if k == "linear_leq" else (lhs_val == rhs)
+                        
+                        if math_sat == positive:
+                            assumps = [assert_lit(a, tv) for a, tv in atom_vals.items()]
+                            meta = {"lhs": lhs_val, "rhs": rhs, "assign": atom_vals}
+                            valid_gen = True
+
+                    elif k == "alldifferent_onehot":
+                         groups = p["groups"]
+                         if positive:
+                             # Distinct indices for each group
+                             g_len = len(groups[0])
+                             if len(groups) <= g_len:
+                                 idxs = rng.sample(range(g_len), len(groups))
+                                 assumps = []
+                                 for g_i, val_i in enumerate(idxs):
+                                     for bit_i, v in enumerate(groups[g_i]):
+                                         assumps.append(assert_lit(v, bit_i == val_i))
+                                 valid_gen = True
+                         else:
+                             # Collision: two groups same index
+                             if len(groups) >= 2:
+                                 g_idxs = rng.sample(range(len(groups)), 2)
+                                 val_idx = rng.randint(0, len(groups[0])-1)
+                                 g1, g2 = groups[g_idxs[0]], groups[g_idxs[1]]
+                                 
+                                 assumps = []
+                                 # 1. Force collision
+                                 assumps.append(g1[val_idx])
+                                 assumps.append(g2[val_idx])
+                                 
+                                 # 2. Force all other bits in these two groups to False
+                                 for bit_i in range(len(groups[0])):
+                                     if bit_i != val_idx:
+                                         assumps.append(assert_lit(g1[bit_i], False))
+                                         assumps.append(assert_lit(g2[bit_i], False))
+                                 valid_gen = True
+                    
+                    if valid_gen:
+                        generated.append((assumps, meta))
+                
+                return generated
+
+            if mode in ["both", "positive"]:
+                for t, m in gen_tests(num_tests, True): targets.append((t, "SAT", m))
+            if mode in ["both", "negative"]:
+                for t, m in gen_tests(num_tests, False): targets.append((t, "UNSAT", m))
+            
+            results["total_tests"] += len(targets)
+            
+            # Execute
+            fail_rec = []
+            for assump, expected, meta in targets:
+                outcome = self.solve_cnf_under_assumptions(cnf, assump, state)
+                if outcome != expected:
+                    results["failures"] += 1
+                    rec = {
+                        "id": cid, 
+                        "kind": constr.kind, 
+                        "backend": state.active_ir_backend,
+                        "assumed": assump, 
+                        "expected": expected, 
+                        "got": outcome,
+                        "debug": meta
+                    }
+                    if len(results["failure_examples"]) < 5: results["failure_examples"].append(rec)
+                    fail_rec.append(rec)
+                    # Limit failure examples per constraint in log to 3
+                    if len(fail_rec) >= 3: break
+            
+            # Log
+            log_entry = {
+                "id": cid, 
+                "kind": constr.kind, 
+                "tests_run": len(targets), 
+                "failures_count": len(fail_rec),
+                "failure_examples": fail_rec
+            }
+            state.fuzz_log.append(log_entry)
+
+        return json.dumps(results)
+
+    # Standard Actions
+    def create_plan(self, state: AgentState, plan_data: Dict[str, Any]) -> str:
+        required = ["observations", "variables", "constraints", "strategy"]
+        missing = [k for k in required if k not in plan_data]
+        if missing: return f"Error: Plan is missing required sections: {missing}. Please provide Observations, Variables, Constraints, and Strategy."
+        state.plan = plan_data
+        return "Plan created. You may now DEFINE_VARIABLES."
+
+    def define_variables(self, state: AgentState, var_names: List[str]) -> str:
+        if not state.plan: return "Error: You MUST call 'CREATE_PLAN' before defining variables."
+        added = []
+        for name in var_names:
+            if name not in state.sat_variables:
+                state.sat_variables[name] = state.next_var_id
+                state.next_var_id += 1
+                added.append(name)
+        
+        if not added:
+            return "No new variables registered. You have likely defined them all. Next Goal: Use 'ADD_MODEL_CONSTRAINTS' to forbid collisions or set assignments."
+            
+        return f"Registered {len(added)} variables: {added}"
+
+    def add_model_constraints(self, state: AgentState, constraints_data: List[Dict[str, Any]]) -> str:
+        if not state.plan: return "Error: You MUST call 'CREATE_PLAN' before adding constraints."
+        added_count = 0
+        try:
+            backend = self.registry.get(state.active_ir_backend)
+            allowed = backend.allowed_kinds()
+            for c_data in constraints_data:
+                if "kind" not in c_data or "parameters" not in c_data:
+                    return f"Error: Missing kind/parameters"
+                kind = c_data["kind"]
+                if kind not in allowed:
+                    return f"Error: Kind '{kind}' not allowed in {backend.name}"
+                
+                # Strict Backend Enforcement
+                if "ir_backend" in c_data and c_data["ir_backend"] != state.active_ir_backend:
+                     return f"Error: Cannot add constraint for backend '{c_data['ir_backend']}' while active backend is '{state.active_ir_backend}'"
+
+                # Category Inference
+                cat = c_data.get("category")
+                if not cat:
+                    if kind in ["at_most_k", "at_least_k", "exactly_k", "exactly_one", "alldifferent_onehot"]: cat = "cardinality"
+                    elif kind in ["linear_leq", "linear_eq"]: cat = "geometry"
+                    elif kind in ["clause", "implies"]: cat = "logic"
+                    elif kind == "connected_8": cat = "connectivity"
+                    else: cat = "logic"
+                
+                c_id = c_data.get("id", str(uuid.uuid4()))
+                c = ModelingConstraint(id=c_id, ir_backend=backend.name, kind=kind, parameters=c_data["parameters"], category=cat)
+                backend.validate_constraint(c, state)
+                state.model_constraints.append(c)
+                added_count += 1
+        except Exception as e:
+            return f"Error: {str(e)}"
+        return f"Added {added_count} constraints."
+
+    def remove_model_constraints(self, state: AgentState, ids: List[str]) -> str:
+        orig = len(state.model_constraints)
+        state.model_constraints = [c for c in state.model_constraints if c.id not in ids]
+        return f"Removed {orig - len(state.model_constraints)} constraints."
+
+    def get_schema(self, state: AgentState) -> str:
+        backend = self.registry.get(state.active_ir_backend)
+        return json.dumps(backend.allowed_kinds(), indent=2)
+
+    def test_constraint(self, state: AgentState, args: Dict[str, Any]) -> str:
+        """Isolated check: can we compile these specific constraints?"""
+        c_payloads = args.get("constraints", [])
+        if not c_payloads: return "No constraints provided to test."
+        
+        # Temp build
+        test_constraints = []
+        backend = self.registry.get(state.active_ir_backend)
+        
+        try:
+            for c_data in c_payloads:
+                kind = c_data.get("kind")
+                if kind not in backend.allowed_kinds(): return f"Invalid Kind: {kind}"
+                c = ModelingConstraint(
+                    id="test", ir_backend=backend.name, 
+                    kind=kind, parameters=c_data.get("parameters", {})
+                )
+                backend.validate_constraint(c, state)
+                test_constraints.append(c)
+            
+            # Isolated Compile
+            clauses = self.compile_subset(state, test_constraints)
+            return f"Valid. Compiled to {len(clauses)} clauses."
+        except Exception as e:
+            return f"Invalid: {str(e)}"
+
+    def add_constraints(self, state: AgentState, constraints: List[List[str]]) -> str:
+        return "Error: Raw clause injection is disabled. Use ADD_MODEL_CONSTRAINTS."
+
+    def refine_from_validation(self, state: AgentState, errors: List[str]) -> str:
+        # This action is a signal for the LLM to start fixing things.
+        # It doesn't change state directly but logs the intent to refine.
+        return f"Refining model based on {len(errors)} validation errors. Please REMOVE or ADD constraints."
+
+    def solve(self, state: AgentState) -> str:
+        try:
+            self._compile(state)
+        except Exception as e:
+            return f"Compilation Failed: {e}"
+        
+        if not state.cnf_clauses: return "No Constraints compiled."
+
+        try:
+            s = Solver(name=self.solver_name, bootstrap_with=state.cnf_clauses)
+            if s.solve():
+                m = s.get_model()
+                assignment = {v: (v > 0) for v in m}
+                result = {k: assignment[v] for k, v in state.sat_variables.items() if v in assignment}
+                state.solution = result
+                s.delete()
+                # Important: Return generic message. Validation happens in Agent Loop.
+                return "Solution Found (Stored in state). Validation Pending."
+            s.delete()
+            return "Unexpected UNSAT"
+        except Exception as e: return f"Error: {e}"
+
+    def decode_solution(self, state: AgentState) -> str:
+        # Legacy stub
+        if state.solution: return "Solution available in state."
+        return "No solution."
+
+    def refine_model(self, state: AgentState, feedback: str) -> str:
+        return "Model Refinement Logged"
