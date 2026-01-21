@@ -11,13 +11,16 @@ class ReActAgent:
     def __init__(self, 
                  llm_callable: Callable[[str], str], 
                  max_steps: int = 10,
-                 validator_callable: Optional[Callable[[Dict[str, Any], AgentState], Tuple[bool, List[str]]]] = None):
+                 validator_callable: Optional[Callable[[Dict[str, Any], AgentState], Tuple[bool, List[str]]]] = None,
+                 ir_backend: str = None):
         self.llm_callable = llm_callable
         self.max_steps = max_steps
         self.validator_callable = validator_callable
         self.registry = IRBackendRegistry()
         self.sat = SATManager(self.registry)
         self.config = IRConfig.from_env_or_file() 
+        if ir_backend:
+            self.config.backend = ir_backend 
         
         # Load System Prompt
         import os
@@ -63,7 +66,7 @@ class ReActAgent:
     def _execute(self, state: AgentState, action: ActionType, arg: Any) -> str:
         try:
             if action == ActionType.DEFINE_VARIABLES: return self.sat.define_variables(state, arg)
-            elif action == ActionType.CREATE_PLAN: return self.sat.create_plan(state, arg)
+            elif action == ActionType.UPDATE_PLAN: return self.sat.update_plan(state, arg)
             elif action == ActionType.REFINE_FROM_VALIDATION: return self.sat.refine_from_validation(state, arg.get("errors", []))
             elif action == ActionType.ADD_MODEL_CONSTRAINTS: return self.sat.add_model_constraints(state, arg)
             elif action == ActionType.REMOVE_MODEL_CONSTRAINTS: return self.sat.remove_model_constraints(state, arg)
@@ -136,6 +139,13 @@ class ReActAgent:
     def _construct_prompt(self, goal: str, state: AgentState) -> str:
         prompt = f"{self.system_prompt}\nGOAL: {goal}\nACTIVE_BACKEND: {state.active_ir_backend}\n"
         prompt += f"AVAILABLE: {self.registry.list_backends()}\n"
+        
+        # --- DYNAMIC BACKEND HINT ---
+        try:
+             backend = self.registry.get(state.active_ir_backend)
+             prompt += backend.get_prompt_doc() + "\n"
+        except: pass
+        
         prompt += f"SCHEMA: {self.sat.get_schema(state)}\n"
         
         # --- CONTEXT BOX (User Requested) ---

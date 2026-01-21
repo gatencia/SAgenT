@@ -52,7 +52,12 @@ def load_instances(instances_dir: str, family_filter: str = None, id_filter: str
     return sorted(instances, key=lambda x: x.get("id", ""))
 
 def load_checker(family: str, checkers_dir: str):
-    checker_path = os.path.join(checkers_dir, f"{family}.py")
+    # Mapping for families where checker filename differs
+    mapping = {
+        "polyomino": "pentomino"
+    }
+    filename = mapping.get(family, family)
+    checker_path = os.path.join(checkers_dir, f"{filename}.py")
     if not os.path.exists(checker_path):
         return None
     
@@ -288,7 +293,7 @@ def run_benchmark(args):
         # 3. Initialize Agent
         try:
             llm = make_llm(args.provider, args.api_key, args.model)
-            agent = ReActAgent(llm_callable=llm, max_steps=args.max_steps)
+            agent = ReActAgent(llm_callable=llm, max_steps=args.max_steps, ir_backend=args.IR)
         except Exception as e:
             print(f"Error initializing agent: {e}")
             sys.exit(1)
@@ -356,6 +361,7 @@ if __name__ == "__main__":
     parser.add_argument("--provider", type=str, default="mock", choices=["mock", "openai", "google", "ollama", "simulated"], help="LLM Provider")
     parser.add_argument("--api_key", type=str, help="API Key for Provider")
     parser.add_argument("--model", type=str, help="Model name (e.g. gemini-1.5-pro-latest)")
+    parser.add_argument("--IR", type=str, default="pb", help="Intermediate Representation Backend (pb, minizinc, etc)")
     
     args = parser.parse_args()
     run_benchmark(args)

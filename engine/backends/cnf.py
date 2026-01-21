@@ -7,6 +7,16 @@ class CNFBackend(IRBackend):
     def name(self) -> str:
         return "cnf"
 
+    def get_prompt_doc(self) -> str:
+        return """
+### BACKEND: CNF (Raw SAT)
+You are using the Raw CNF backend.
+This backend acts as a direct pass-through to the SAT solver.
+- **Capabilities**: Only supports raw `clause` injection (Disjunction of literals).
+- **Mapping**: No high-level abstractions. You must bit-blast everything yourself.
+- **Use Case**: Only use this if you want manual control over every clause.
+"""
+
     def allowed_kinds(self) -> Dict[str, Any]:
         return {
             "clause": {

@@ -10,6 +10,14 @@ The system is a "Hybrid Neuro-Symbolic Engine":
 ## ACTIONS (Your Toolset)
 You must output a JSON object with "action" and "action_input".
 
+## HINT: AVAILABLE TOOLS
+The following tools have been installed and are available:
+* Solvers (via python-sat): minisat, glucose3, glucose4, cadical
+* Python packages: python-sat (pysmt, z3-solver also conceptual)
+You are the logic engine; you will use these solvers via the 'SOLVE' action.
+
+## ACTIONS
+
 1. DEFINE_VARIABLES
    - Usage: Register boolean variables.
    - Format: {"action": "DEFINE_VARIABLES", "action_input": ["x_1", "y_2", ...]}
@@ -32,24 +40,20 @@ You must output a JSON object with "action" and "action_input".
    - Usage: Compile and run the SAT solver.
    - Format: {"action": "SOLVE", "action_input": {}}
 
-4. CREATE_PLAN (MANDATORY FIRST STEP)
-   - Usage: Define your strategy.
-   - You MUST use the PLAN to organize your approach before implementing the SAT encoding. 
-   - Document:
-     (1) Observations: Key insights about the problem.
-     (2) Variables: What Boolean variables you'll use.
-     (3) Constraints: What SAT clauses you'll need.
-     (4) Strategy: Implementation Strategy.
-   - Format:
-     {
-       "action": "CREATE_PLAN",
-       "action_input": {
-         "observations": ["Grid is 6x6", "Robots cannot overlap"],
-         "variables": ["R_x_y_t for each robot"],
-         "constraints": ["No collision", "Path continuity"],
-         "strategy": "One-hot encoding with timestep unrolling"
-       }
-     }
+4. UPDATE_PLAN (MANDATORY FIRST STEP & ITERATIVE REFEREE)
+   - Usage: define, refine, and verify your strategy.
+   - You MUST use the PLAN.md file to iterate on your approach. 
+   - INSTRUCTIONS:
+     1. First call: Set "verification" to "DRAFT". Document initial observations and strategy.
+     2. Subsequent calls: critique your own plan. Check edge cases. Refine bounds. Add "verification" to "REFINING".
+     3. Final call: Only when confident, set "verification" to "CONFIRMED".
+   - REQUIRED FIELDS:
+     - "verification": "DRAFT" | "REFINING" | "CONFIRMED"
+     - "observations": List of insights, bounds (e.g. area caps), optimality proofs.
+     - "variables": detailed list of boolean variables (PROPOSITIONAL).
+     - "constraints": detailed list of logic clauses.
+     - "strategy": Symmetry breaking, search space pruning, connectivity approach.
+   - Format: {"action": "UPDATE_PLAN", "action_input": { ... all fields ... }}
 
 5. FUZZ_CONSTRAINTS
    - Usage: Test your logic with random assignments (Sanity Check).
@@ -66,6 +70,14 @@ You must output a JSON object with "action" and "action_input".
 7. FINISH
    - Usage: Terminate only if DECODE_SOLUTION confirms VALID.
    - Format: {"action": "FINISH", "action_input": {}}
+
+## CRITICAL: PROPOSITIONAL LOGIC ONLY
+- You CANNOT use First-Order Logic quantifiers or templates like "For all i, x_i".
+- You must UNROLL all loops manually.
+- You must define EVERY single variable instance (e.g., "x_0", "x_1", "x_2").
+- You must add EVERY single constraint instance.
+- **WRONG**: "x_i distinct" OR "implies(x_i, y_i)" (Template)
+- **RIGHT**: "x_0, x_1 distinct" AND "implies(x_0, y_0)" AND "implies(x_1, y_1)"
 
 ## RULES
 - Do NOT invent actions like "DECOMPOSE", "PLAN", or "DECLARE".

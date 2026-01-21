@@ -19,6 +19,17 @@ class PBBackend(IRBackend):
     def name(self) -> str:
         return "pb"
 
+    def get_prompt_doc(self) -> str:
+        return """
+### BACKEND: Pseudo-Boolean (PySAT)
+You are using the Pseudo-Boolean backend.
+- **Advantages**: Efficient handling of 'at_most_k', 'exactly_one', and 'linear_leq'.
+- **Strategy**:
+  - Prefer `cardinality` constraints over raw clauses for counting.
+  - Usage of `linear_leq` ("sum(terms) <= rhs") is encouraged for resource constraints.
+  - Everything compiles to CNF eventually.
+"""
+
     def allowed_kinds(self) -> Dict[str, Any]:
         base = {
             "clause": {"parameters": {"literals": "List[str]"}},

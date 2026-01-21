@@ -358,15 +358,33 @@ class SATManager:
         return json.dumps(results)
 
     # Standard Actions
-    def create_plan(self, state: AgentState, plan_data: Dict[str, Any]) -> str:
-        required = ["observations", "variables", "constraints", "strategy"]
+    def update_plan(self, state: AgentState, plan_data: Dict[str, Any]) -> str:
+        required = ["observations", "variables", "constraints", "strategy", "verification"]
         missing = [k for k in required if k not in plan_data]
-        if missing: return f"Error: Plan is missing required sections: {missing}. Please provide Observations, Variables, Constraints, and Strategy."
+        if missing: return f"Error: Plan is missing required sections: {missing}. Please provide Observations, Variables, Constraints, Strategy, and Verification."
         state.plan = plan_data
-        return "Plan created. You may now DEFINE_VARIABLES."
+        
+        # Write to PLAN.md
+        try:
+            content = "# Implementation Plan\n\n"
+            content += f"## Verification Status\n**{plan_data['verification']}**\n\n"
+            content += f"## Observations\n{json.dumps(plan_data['observations'], indent=2)}\n\n"
+            content += f"## Variables\n{json.dumps(plan_data['variables'], indent=2)}\n\n"
+            content += f"## Constraints\n{json.dumps(plan_data['constraints'], indent=2)}\n\n"
+            content += f"## Strategy\n{plan_data['strategy']}\n"
+            
+            with open("PLAN.md", "w") as f:
+                f.write(content)
+        except Exception as e:
+            return f"Plan updated in state, but failed to write PLAN.md: {e}"
+            
+        if plan_data['verification'] != "CONFIRMED":
+            return "Plan updated (Status: " + plan_data['verification'] + "). You must REFINE and eventually set verification to 'CONFIRMED' to proceed."
+        return "Plan verified and locked. You may now DEFINE_VARIABLES."
 
     def define_variables(self, state: AgentState, var_names: List[str]) -> str:
-        if not state.plan: return "Error: You MUST call 'CREATE_PLAN' before defining variables."
+        if not state.plan: return "Error: You MUST call 'UPDATE_PLAN' before defining variables."
+        if state.plan.get("verification") != "CONFIRMED": return "Error: Plan verification is NOT 'CONFIRMED'. You must iterate on the plan (checking bounds, symmetry, etc) and explicitly set verification to 'CONFIRMED' only when fully satisfied."
         added = []
         for name in var_names:
             if name not in state.sat_variables:
@@ -458,6 +476,21 @@ class SATManager:
         return f"Refining model based on {len(errors)} validation errors. Please REMOVE or ADD constraints."
 
     def solve(self, state: AgentState) -> str:
+        # Hybrid Solve Logic: Delegate to Backend if it supports solving
+        backend = self.registry.get(state.active_ir_backend)
+        if hasattr(backend, "solve") and callable(backend.solve):
+            try:
+                # The backend handles specific compilation and solving
+                msg = backend.solve(state)
+                # Ensure generic success message for agent flow if strictly valid
+                if "Solution Found" in msg:
+                    # Depending on backend, solution might be stored in state.solution
+                    return "Solution Found (Stored in state). Validation Pending."
+                return msg
+            except Exception as e:
+                return f"Backend Solve Error: {e}"
+
+        # Default PySAT Logic (for 'pb', 'cnf')
         try:
             self._compile(state)
         except Exception as e:

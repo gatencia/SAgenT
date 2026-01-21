@@ -19,3 +19,7 @@ class IRBackend(abc.ABC):
     @abc.abstractmethod
     def allowed_kinds(self) -> Dict[str, Any]:
         pass
+
+    def get_prompt_doc(self) -> str:
+        """Return specific instructions/hints for the LLM on how to use this backend."""
+        return f"Backend {self.name}: No specific instructions provided."
