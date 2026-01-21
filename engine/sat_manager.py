@@ -4,8 +4,9 @@ import uuid
 import random
 from typing import List, Dict, Any, Optional
 
-from engine.state import AgentState, ModelingConstraint
+from engine.state import AgentState, ModelingConstraint, AgentPhase
 from engine.backends.registry import IRBackendRegistry
+
 
 # PySAT imports
 try:
@@ -414,7 +415,64 @@ class SATManager:
                  state.plan["verification"] = "REFINING"
                  return f"Cannot CONFIRM plan yet. Missing meaningful content in: {failures}. Status reverted to REFINING."
 
-        # Write to PLAN.md
+        self._write_plan_to_file(state)
+        
+        # --- DETERMINISTIC PHASE GUIDANCE ---
+        current = state.current_phase
+        if current == "OBSERVATION":
+            obs = state.plan.get("observations", [])
+            plan_vars = state.plan.get("variables", [])
+            strat = state.plan.get("strategy", "")
+            if len(obs) >= 3 and strat:
+                 if plan_vars: # If they also added variables, that's great
+                     return "Plan updated. [OBSERVATION PHASE COMPLETE]. Observations recorded. You MUST now call 'ADVANCE_PHASE' to proceed to VARIABLES."
+                 return "Plan updated. [OBSERVATION PHASE COMPLETE]. You have sufficient observations. Call 'ADVANCE_PHASE' now."
+        
+        if current == "VARIABLES":
+            plan_vars = state.plan.get("variables", [])
+            # Check if actual variables are registered?
+            if plan_vars and len(state.sat_variables) > 0:
+                 return "Plan updated. [VARIABLES PHASE COMPLETE]. Variables defined. You MUST now call 'ADVANCE_PHASE' to proceed to CONSTRAINTS."
+            if plan_vars and not state.sat_variables:
+                 return "Plan updated. Variables listed in plan. NOW use 'DEFINE_VARIABLES' to register them."
+
+        if current == "CONSTRAINTS":
+            plan_constrs = state.plan.get("constraints", [])
+            if plan_constrs and state.model_constraints:
+                 return "Plan updated. [CONSTRAINTS PHASE COMPLETE]. Constraints added. You MUST now call 'ADVANCE_PHASE' to proceed to IMPLEMENTATION."
+
+        status = state.plan.get("verification", "DRAFT")
+        return f"Plan updated (Status: {status}). Continue refining or ADVANCE_PHASE if ready."
+
+    def advance_phase(self, state: AgentState, _: Any = None) -> str:
+        current = state.current_phase
+        
+        # Validation before leaving current phase
+        if current == AgentPhase.OBSERVATION:
+            if not state.plan or not state.plan.get("observations"):
+                return "Error: Cannot advance. You must first populate 'observations' via UPDATE_PLAN."
+            state.current_phase = AgentPhase.VARIABLES
+            return "Phase advanced to VARIABLES. Goal: Define all variables using 'DEFINE_VARIABLES'."
+
+        elif current == AgentPhase.VARIABLES:
+            if not state.sat_variables:
+                return "Error: Cannot advance. You must define at least one variable via 'DEFINE_VARIABLES'."
+            state.current_phase = AgentPhase.CONSTRAINTS
+            return "Phase advanced to CONSTRAINTS. Goal: Add constraints using 'ADD_MODEL_CONSTRAINTS'."
+
+        elif current == AgentPhase.CONSTRAINTS:
+            if not state.model_constraints:
+                 return "Error: Cannot advance. You must add at least one constraint via 'ADD_MODEL_CONSTRAINTS'."
+            state.current_phase = AgentPhase.IMPLEMENTATION
+            return "Phase advanced to IMPLEMENTATION. Goal: Verify logic, then call 'SOLVE'."
+
+        elif current == AgentPhase.IMPLEMENTATION:
+            state.current_phase = AgentPhase.DEBUGGING
+            return "Phase advanced to DEBUGGING. Goal: Review solution, fix issues, or refine model."
+            
+        return f"Already in final phase {current}"
+
+    def _write_plan_to_file(self, state: AgentState):
         try:
             content = "# Implementation Plan\n\n"
             content += f"## Verification Status\n**{state.plan.get('verification', 'DRAFT')}**\n\n"

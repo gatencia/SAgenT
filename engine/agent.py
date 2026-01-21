@@ -33,17 +33,26 @@ class ReActAgent:
         state.active_ir_backend = self.config.backend 
         while not state.finished and state.step_count < self.max_steps:
             state.step_count += 1
-            print(f"Step {state.step_count}...", end="\r", flush=True)
+            
+            # 1. Print Pre-Request Status
+            phase_str = f"[{state.current_phase.value}]" if state.current_phase else ""
+            print(f"Step {state.step_count} {phase_str} Thinking...", end="\r", flush=True)
+            
             history_prompt = self._construct_prompt(goal, state)
             raw = self.llm_callable(history_prompt)
+            
             try:
                 resp = self._parse_llm_output(raw)
             except Exception as e:
+                print(f"Step {state.step_count} {phase_str} Parse Error! Retrying...", end="\r", flush=True)
                 self._record(state, "ParseFail", "ERROR", f"{e} || RAW: {raw}")
                 continue
             
             action_type = resp["action"]
             action_input = resp["action_input"]
+
+            # 2. Print Action Status
+            print(f"Step {state.step_count} {phase_str} Action: {action_type.value}...", end="\r", flush=True)
 
             # Execute Action
             obs = self._execute(state, action_type, action_input)
@@ -61,6 +70,8 @@ class ReActAgent:
             
             self._record(state, resp.get("thought",""), f"{action_type.value}", obs)
             if action_type == ActionType.FINISH: state.finished = True
+        
+        print(f"\nFinished in {state.step_count} steps.") # Newline at end
         return state
 
     def _execute(self, state: AgentState, action: ActionType, arg: Any) -> str:

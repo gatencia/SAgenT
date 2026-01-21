@@ -238,7 +238,7 @@ def make_llm(provider: str, api_key: str = None, model: str = None) -> Callable[
         key = api_key or os.environ.get("GOOGLE_API_KEY")
         if not key:
             raise ValueError("API Key required for google provider (arg or GOOGLE_API_KEY env)")
-        m = model if model else "gemini-2.0-flash"
+        m = model if model else "gemini-2.5-flash"
         # Gemini Free Tier is often ~15 RPM => 4 seconds per request
         limiter = RateLimiter(min_interval=4.0)
         def limited_call(p):

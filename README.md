@@ -2,16 +2,36 @@
 
 A **ReAct-based Agent** that uses Large Language Models (LLMs) to reason about problems and a **SAT Solver** (`python-sat`) to rigorously solve them.
 
-This project demonstrates a "Brain-Muscle" architecture:
--   **Brain**: Gemini 2.0 (or local Ollama models) translates natural language goals into mathematical constraints.
--   **Muscle**: Python-SAT compiles these constraints into CNF and finds the exact solution (or proves UNSAT).
--   **Safety**: Explicit **Fuzzing** steps allow the agent to unit-test its own logic before solving.
+## 🏗 System Architecture (Strict Phasing)
 
-## Features
-*   **Zero-Dependency LLM Calls**: Uses standard `urllib` for API interactions (Gemini, OpenAI, Ollama).
-*   **JIT Compilation**: Translates high-level constraints (e.g., `at_most_k`) to CNF on the fly.
-*   **Deterministic Fuzzing**: Validates agent logic probabilistically.
-*   **Benchmark Harness**: Includes validaters (Checkers) for Multi-Robot Path Planning (MRPP).
+The agent now follows a strict **5-Phase Pipeline** to ensure robust problem formulation:
+
+1.  **OBSERVATION** (Understanding):
+    *   Agent extracts bounds, grid sizes, and rules.
+    *   Output: `UPDATE_PLAN` with rich observations.
+    *   **Goal**: Must satisfy observation count before advancing.
+
+2.  **VARIABLES** (Search Space):
+    *   Agent maps observations to discrete Boolean/Integer variables.
+    *   Action: `DEFINE_VARIABLES`.
+    *   **Goal**: Must register variables in the engine.
+
+3.  **CONSTRAINTS** (Logic):
+    *   Agent applies high-level constraints (e.g., `at_most_k`, `alldifferent`) to variables.
+    *   Action: `ADD_MODEL_CONSTRAINTS`.
+    *   **Goal**: Must populate the model with logic.
+
+4.  **IMPLEMENTATION** (Solving):
+    *   Agent calls `SOLVE`.
+    *   The backend (PySAT or MiniZinc) compiles and runs the solver.
+
+5.  **DEBUGGING** (Refinement):
+    *   If solving fails, the agent enters this loop to critique and fix the model.
+
+### Key Features
+*   **Deterministic Phase Advancement**: The Engine acts as a referee, explicitly telling the Agent when it has met the criteria to `ADVANCE_PHASE`.
+*   **Multi-Backend**: Support for `minizinc`, `pb` (Pseudo-Boolean), and `cnf`.
+*   **Iterative Planning**: `PLAN.md` is updated live, preserving "Current Code" visibility.
 
 ## Installation
 
