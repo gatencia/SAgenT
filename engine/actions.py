@@ -1,6 +1,11 @@
 from enum import Enum
 
 class ActionType(str, Enum):
+    # Planning
+    UPDATE_PLAN = "UPDATE_PLAN"
+    ADVANCE_PHASE = "ADVANCE_PHASE"
+    
+    # Modeling
     DEFINE_VARIABLES = "DEFINE_VARIABLES"
     ADD_MODEL_CONSTRAINTS = "ADD_MODEL_CONSTRAINTS"
     REMOVE_MODEL_CONSTRAINTS = "REMOVE_MODEL_CONSTRAINTS"

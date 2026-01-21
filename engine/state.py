@@ -1,5 +1,7 @@
 import dataclasses
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
+from enum import Enum
 
 @dataclasses.dataclass
 class ModelingConstraint:
@@ -14,21 +16,38 @@ class ModelingConstraint:
     def serialize(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
 
-@dataclasses.dataclass
+class AgentPhase(str, Enum):
+    OBSERVATION = "OBSERVATION"
+    VARIABLES = "VARIABLES"
+    CONSTRAINTS = "CONSTRAINTS"
+    IMPLEMENTATION = "IMPLEMENTATION"
+    DEBUGGING = "DEBUGGING"
+
+@dataclass
 class AgentState:
-    trajectory: List[Tuple[str, str, str]] = dataclasses.field(default_factory=list)
-    sat_variables: Dict[str, int] = dataclasses.field(default_factory=dict)
-    next_var_id: int = 1
-    model_constraints: List[ModelingConstraint] = dataclasses.field(default_factory=list)
-    active_ir_backend: str = "pb"
-    cnf_clauses: List[List[int]] = dataclasses.field(default_factory=list)
+    trajectory: List[Tuple[str, str, str]] = field(default_factory=list)
     step_count: int = 0
     finished: bool = False
     final_status: Optional[str] = None
-    solution: Optional[Dict[str, Any]] = None
-    fuzz_log: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
-    plan: Optional[Dict[str, Any]] = None
-    validator_results: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
+    
+    # SAT/CSP State
+    sat_variables: Dict[str, int] = field(default_factory=dict)
+    next_var_id: int = 1
+    model_constraints: List[ModelingConstraint] = field(default_factory=list)
+    
+    # Active Backend
+    active_ir_backend: str = "pb"
+    
+    # Planning
+    plan: Optional[Dict[str, Any]] = None # {observations, variables, constraints, strategy, verification}
+    current_phase: AgentPhase = AgentPhase.OBSERVATION # Strict Phase Control
+
+    # Execution
+    cnf_clauses: List[List[int]] = field(default_factory=list)
+    solution: Optional[Dict[str, bool]] = None
+    validator_results: List[Dict[str, Any]] = field(default_factory=list)
+    
+    fuzz_log: List[Dict[str, Any]] = field(default_factory=list)
     compile_report: Optional[Dict[str, Any]] = None
 
     def serialize(self) -> Dict[str, Any]:

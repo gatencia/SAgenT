@@ -359,27 +359,80 @@ class SATManager:
 
     # Standard Actions
     def update_plan(self, state: AgentState, plan_data: Dict[str, Any]) -> str:
-        required = ["observations", "variables", "constraints", "strategy", "verification"]
-        missing = [k for k in required if k not in plan_data]
-        if missing: return f"Error: Plan is missing required sections: {missing}. Please provide Observations, Variables, Constraints, Strategy, and Verification."
-        state.plan = plan_data
-        
+        # 1. Initialize empty plan if None
+        if state.plan is None:
+            state.plan = {
+                "observations": [],
+                "variables": [],
+                "constraints": [],
+                "strategy": "",
+                "verification": "DRAFT",
+                "current_code": []
+            }
+
+        # 2. Merge Updates
+        # We allow partial updates. If a key is present in plan_data, it overwrites/appends.
+        for key in ["observations", "variables", "constraints", "strategy", "verification", "current_code"]:
+            if key in plan_data:
+                val = plan_data[key]
+                # Sanitize Observations (Flatten Objects to Strings)
+                if key == "observations" and isinstance(val, list):
+                    clean_obs = []
+                    for item in val:
+                        if isinstance(item, dict):
+                             # Flatten {"key": "k", "value": "v"} -> "k: v"
+                             parts = [f"{k}: {v}" for k,v in item.items()]
+                             clean_obs.append(", ".join(parts))
+                        else:
+                             clean_obs.append(str(item))
+                    val = clean_obs
+                
+                state.plan[key] = val
+                
+                # Sanitize Variables (Flatten Lists/Objects to format suitable for Plan)
+                if key == "variables" and isinstance(val, list):
+                    clean_vars = []
+                    for item in val:
+                        if isinstance(item, list):
+                             # Flatten nested ["R1", "x"] -> "R1_x" or join
+                             clean_vars.append("_".join([str(sub) for sub in item]))
+                        elif isinstance(item, dict):
+                             # {"name": "x", "type": "bool"} -> "x"
+                             clean_vars.append(item.get("name", str(item)))
+                        else:
+                             clean_vars.append(str(item))
+                    state.plan[key] = clean_vars
+
+        # 3. Check for completeness only on Confirmation
+        if state.plan.get("verification") == "CONFIRMED":
+            failures = []
+            if not state.plan.get("observations"): failures.append("observations")
+            if not state.plan.get("variables"): failures.append("variables")
+            if not state.plan.get("strategy"): failures.append("strategy")
+            if failures:
+                 # Revert status to DRAFT if incomplete
+                 state.plan["verification"] = "REFINING"
+                 return f"Cannot CONFIRM plan yet. Missing meaningful content in: {failures}. Status reverted to REFINING."
+
         # Write to PLAN.md
         try:
             content = "# Implementation Plan\n\n"
-            content += f"## Verification Status\n**{plan_data['verification']}**\n\n"
-            content += f"## Observations\n{json.dumps(plan_data['observations'], indent=2)}\n\n"
-            content += f"## Variables\n{json.dumps(plan_data['variables'], indent=2)}\n\n"
-            content += f"## Constraints\n{json.dumps(plan_data['constraints'], indent=2)}\n\n"
-            content += f"## Strategy\n{plan_data['strategy']}\n"
+            content += f"## Verification Status\n**{state.plan.get('verification', 'DRAFT')}**\n\n"
+            content += f"## Observations\n{json.dumps(state.plan.get('observations', []), indent=2)}\n\n"
+            content += f"## Variables\n{json.dumps(state.plan.get('variables', []), indent=2)}\n\n"
+            content += f"## Constraints\n{json.dumps(state.plan.get('constraints', []), indent=2)}\n\n"
+            content += f"## Strategy\n{state.plan.get('strategy', '')}\n\n"
+            content += f"## Current Code\n```json\n{json.dumps(state.plan.get('current_code', []), indent=2)}\n```\n"
             
             with open("PLAN.md", "w") as f:
                 f.write(content)
         except Exception as e:
             return f"Plan updated in state, but failed to write PLAN.md: {e}"
+        except Exception as e:
+            return f"Plan updated in state, but failed to write PLAN.md: {e}"
             
-        if plan_data['verification'] != "CONFIRMED":
-            return "Plan updated (Status: " + plan_data['verification'] + "). You must REFINE and eventually set verification to 'CONFIRMED' to proceed."
+        if state.plan['verification'] != "CONFIRMED":
+            return "Plan updated (Status: " + state.plan['verification'] + "). You must REFINE and eventually set verification to 'CONFIRMED' to proceed."
         return "Plan verified and locked. You may now DEFINE_VARIABLES."
 
     def define_variables(self, state: AgentState, var_names: List[str]) -> str:

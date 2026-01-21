@@ -67,6 +67,7 @@ class ReActAgent:
         try:
             if action == ActionType.DEFINE_VARIABLES: return self.sat.define_variables(state, arg)
             elif action == ActionType.UPDATE_PLAN: return self.sat.update_plan(state, arg)
+            elif action == ActionType.ADVANCE_PHASE: return self.sat.advance_phase(state, arg)
             elif action == ActionType.REFINE_FROM_VALIDATION: return self.sat.refine_from_validation(state, arg.get("errors", []))
             elif action == ActionType.ADD_MODEL_CONSTRAINTS: return self.sat.add_model_constraints(state, arg)
             elif action == ActionType.REMOVE_MODEL_CONSTRAINTS: return self.sat.remove_model_constraints(state, arg)
@@ -99,9 +100,19 @@ class ReActAgent:
                  import ast
                  data = ast.literal_eval(clean_raw)
              except:
-                 pass
+                 # Regex Fallback for "Here is the JSON: { ... }" garbage
+                 import re
+                 match = re.search(r'\{.*\}', clean_raw, re.DOTALL)
+                 if match:
+                     try:
+                         data = json.loads(match.group(0))
+                     except:
+                         data = {}
+                 else:
+                     data = {}
 
-        if "action" not in data: raise ValueError("No action")
+        if not isinstance(data, dict) or "action" not in data: 
+             raise ValueError("Failed to parse valid JSON action object")
         
         # --- ROBUSTNESS PATCH FOR LOCAL MODELS ---
         act = data["action"]
@@ -126,6 +137,19 @@ class ReActAgent:
         if act == "CREATE_CONSTRAINTS": act = "ADD_MODEL_CONSTRAINTS"
         if act == "ADD_CONSTRAINTS": act = "ADD_MODEL_CONSTRAINTS"
         
+        # 3. Clean Variable Input (Handle [{"name": "x"}, ...] -> ["x", ...])
+        if act == "DEFINE_VARIABLES":
+             inp = data.get("action_input")
+             if isinstance(inp, dict) and "variables" in inp:
+                 inp = inp["variables"] # Extract list from dict wrapper
+             
+             if isinstance(inp, list):
+                 new_vars = []
+                 for v in inp:
+                     if isinstance(v, dict): new_vars.append(v.get("name", str(v)))
+                     else: new_vars.append(str(v))
+                 data["action_input"] = new_vars
+
         data["action"] = act
         # -----------------------------------------
 
@@ -189,7 +213,14 @@ class ReActAgent:
         except: pass
         prompt += "="*40 + "\n"
 
-        prompt += "\nHISTORY:\n"
-        for i, (t, a, o) in enumerate(state.trajectory):
-            prompt += f"{i}. T:{t} A:{a} O:{o}\n"
+        prompt += "\nHISTORY (Last 10 Actions):\n"
+        start_idx = max(0, len(state.trajectory) - 10)
+        if start_idx > 0:
+            prompt += f"... ({start_idx} prior steps hidden) ...\n"
+        
+        for i, (t, a, o) in enumerate(state.trajectory[start_idx:], start=start_idx):
+            # Truncate Observation if too long
+            obs_str = str(o)
+            if len(obs_str) > 500: obs_str = obs_str[:500] + "... [TRUNCATED]"
+            prompt += f"{i}. T:{t} A:{a} O:{obs_str}\n"
         return prompt
