@@ -103,6 +103,12 @@ class ReActAgent:
             if clean_raw.endswith("```"):
                 clean_raw = clean_raw[:-3].strip()
         
+        # Aggressive Cleaning: Remove trailing characters after the last closing brace '}'
+        # This fixes errors like: {"..."}\n"]}
+        last_brace = clean_raw.rfind('}')
+        if last_brace != -1:
+            clean_raw = clean_raw[:last_brace+1]
+        
         try:
             data = json.loads(clean_raw)
         except Exception:

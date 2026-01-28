@@ -50,3 +50,9 @@ This backend acts as a direct pass-through to the SAT solver.
                 if clause_ints:
                     output_clauses.append(clause_ints)
         return output_clauses
+
+    def generate_code(self, state: AgentState) -> str:
+        """Return a summary of the CNF clauses (since raw DIMACS is massive)."""
+        num_vars = state.next_var_id - 1
+        num_clauses = len(state.cnf_clauses)
+        return f"DIMACS CNF Summary:\np cnf {num_vars} {num_clauses}\n(Constraint list hidden to save space, but contains {num_clauses} clauses)"

@@ -17,10 +17,17 @@ from typing import List, Dict, Any
 
 from engine.backends.base import IRBackend
 from engine.state import AgentState, ModelingConstraint
+from tools.mzn_to_fzn import compile_to_flatzinc, parse_flatzinc
+from engine.booleanizer import Booleanizer
+from engine.booleanizer import Booleanizer
+from pysat.solvers import Solver
+from engine.debug_harness import DebugHarness
+import json
 
 class MiniZincCoreBackend(IRBackend):
     def __init__(self):
-        self.solver_id = "chuffed" # Default
+        self.solver_id = "chuffed" # Used for FZN compilation compilation target if needed
+        self.booleanizer = Booleanizer()
 
     @property
     def name(self) -> str:
@@ -66,24 +73,18 @@ Constraint logic is handled by the solver's CP-SAT engine.
         # We need to refactor SATManager to delegate SOLVING to the backend too.
         return []
 
-    def solve(self, state: AgentState) -> str:
+    def generate_code(self, state: AgentState) -> str:
         # 1. Generate MZN
         mzn_lines = []
         
         # Variables (Boolean)
-        # We need to map our vars (ints or names?) to MZN vars.
-        # Our state.sat_variables maps Name -> IntID.
-        # In MZN we can just use the Names directly if they are valid identifiers.
-        # Or map them to x[1..N].
-        # Let's use x[id].
-        
         max_id = state.next_var_id
         if state.sat_variables:
              max_id = max(max(state.sat_variables.values()) + 1, max_id)
         
         mzn_lines.append(f"array[1..{max_id}] of var bool: x;")
         
-        # Constraints
+        # Helper to get MZN ref
         def get_mzn_ref(name):
             name_str = str(name)
             is_neg = name_str.startswith('-') or name_str.startswith('~')
@@ -103,8 +104,6 @@ Constraint logic is handled by the solver's CP-SAT engine.
                 mzn_lines.append(f"constraint {get_mzn_ref(p['a'])} -> {get_mzn_ref(p['b'])};")
             elif k == "exactly_one":
                 vars_ref = [get_mzn_ref(v) for v in p["vars"]]
-                # sum(v) = 1
-                # bool2int coercion
                 bools = [f"bool2int({v})" for v in vars_ref]
                 mzn_lines.append(f"constraint sum([{', '.join(bools)}]) = 1;")
             elif k == "at_most_k":
@@ -114,29 +113,114 @@ Constraint logic is handled by the solver's CP-SAT engine.
             # ... (Implement others as needed)
             
         mzn_lines.append("solve satisfy;")
+        return "\n".join(mzn_lines)
+
+    def solve(self, state: AgentState) -> str:
+        """
+        Executes the MZN -> FZN -> CNF -> SAT pipeline with Debug Harness.
+        """
+        mzn_code = self.generate_code(state)
         
-        # Write File
-        f_name = f"model_{uuid.uuid4().hex[:8]}.mzn"
-        with open(f_name, "w") as f:
-            f.write("\n".join(mzn_lines))
-            
-        # Run Solver
-        # minizinc --solver chuffed model.mzn
+        # 1. Write Code to File
+        model_id = uuid.uuid4().hex[:8]
+        f_mzn = f"memory/model_{model_id}.mzn"
+        
         try:
-            res = subprocess.run(["minizinc", "--solver", self.solver_id, f_name], capture_output=True, text=True)
-            if "UNSATISFIABLE" in res.stdout:
-                return "UNSAT"
-            if "----------" in res.stdout: # Solution separator
-                # Parse output
-                # We didn't add output statements, so minizinc output is default?
-                # Default is usually x = array1d(1..N, [true, false...]);
-                # We should probably force output format.
-                pass
-                return "Solution Found (MiniZinc Parsing Pending)"
-            return f"MiniZinc produced unknown output or error: {res.stderr}"
+            with open(f_mzn, "w") as f:
+                f.write(mzn_code)
+                
+            # 2. Compile to FlatZinc
+            try:
+                fzn_content = compile_to_flatzinc(f_mzn)
+            except Exception as e:
+                return f"MiniZinc Compilation Failed (Syntax/Type Error):\n{e}"
+                
+            # 3. Parse and Translate to CNF
+            try:
+                vars_found, constrs_found = parse_flatzinc(fzn_content)
+                
+                local_booleanizer = Booleanizer()
+                harness = DebugHarness(solver_name='g3')
+                
+                # Register Vars
+                for v in vars_found:
+                    if v['type'] == 'bool':
+                        local_booleanizer.register_bool(v['name'])
+                    # Int support pending
+                
+                # Reset Harness with correct max_id
+                max_id = local_booleanizer.next_id - 1
+                harness.reset_instrumentation(max_id)
+                
+                # Translate Constraints & Instrument
+                for c in constrs_found:
+                    # We only handle bool_clause for now
+                    if c['type'] == 'bool_clause':
+                        args_str = c['args']
+                        import re
+                        m = re.match(r"\[(.*)\],\s*\[(.*)\]", args_str)
+                        if m:
+                            pos_part = m.group(1).split(',') if m.group(1).strip() else []
+                            neg_part = m.group(2).split(',') if m.group(2).strip() else []
+                            clause = []
+                            for p in pos_part:
+                                if p.strip(): clause.append(local_booleanizer.get_bool_literal(p.strip()))
+                            for n in neg_part:
+                                if n.strip(): clause.append(-local_booleanizer.get_bool_literal(n.strip()))
+                            
+                            # Add Group
+                            # Group ID comes from mzn_to_fzn "group" field or fallback
+                            gid = c.get("group", f"c_{uuid.uuid4().hex[:4]}")
+                            harness.add_group(gid, [clause], {"raw": c["raw"], "type": c["type"]})
+                
+                # 4. Diagnose using Harness
+                report = harness.diagnose()
+                
+                # Write Debug Report
+                with open("output_debug.json", "w") as f:
+                    json.dump(report, f, indent=2)
+                
+                if report["status"] == "SAT":
+                    # Retrieve the first model from harness if available or re-solve
+                    # Ideally harness returns models. For now, let's re-solve simply to populate state
+                    # or assume the harness left the solver in SAT state? No, harness reconstructs.
+                    # Let's simple-solve for state population:
+                    
+                    solver = Solver(name="g3", bootstrap_with=harness.clauses) # Instrumented clauses!
+                    solver.solve(assumptions=[g["selector"] for g in harness.groups.values()])
+                    model = solver.get_model()
+                    
+                    decoded_vars = []
+                    decoded_map = {}
+                    for lit in model:
+                        if lit > 0:
+                             # Booleanizer map check
+                             info = local_booleanizer.literal_to_info.get(lit)
+                             if info:
+                                 name = info["name"]
+                                 decoded_vars.append(name)
+                                 decoded_map[name] = True
+                    
+                    # Write output.txt
+                    with open("output.txt", "w") as f:
+                        f.write(f"SAT\n")
+                        f.write("\n".join(decoded_vars))
+                        
+                    state.solution = {v: (v in decoded_map) for v in local_booleanizer.var_map.keys() if local_booleanizer.var_map[v]["type"] == 'bool'}
+                    solver.delete()
+                    return "SAT"
+                
+                else:
+                    # UNSAT
+                    core_groups = report.get("minimized_core", [])
+                    return f"UNSAT. Core Groups: {core_groups[:5]}... (See output_debug.json)"
+
+            except Exception as e:
+                # import traceback
+                # traceback.print_exc()
+                return f"Translation/Harness Failed: {e}"
+
         except Exception as e:
-            return f"MiniZinc execution failed: {e}"
+            return f"Pipeline Error: {e}"
         finally:
-            if os.path.exists(f_name): os.remove(f_name)
-            
-        return "Unknown"
+            pass

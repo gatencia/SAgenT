@@ -141,3 +141,7 @@ You are using the Pseudo-Boolean backend.
                 top_id = curr_max
         
         return output_clauses
+
+    def generate_code(self, state: AgentState) -> str:
+        """Return a representation of the Pseudo-Boolean state."""
+        return f"Pseudo-Boolean Backend Summary:\nActive Constraints: {len(state.model_constraints)}"

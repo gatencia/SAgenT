@@ -368,12 +368,13 @@ class SATManager:
                 "constraints": [],
                 "strategy": "",
                 "verification": "DRAFT",
-                "current_code": []
+                "current_code": [],
+                "problems": []
             }
 
         # 2. Merge Updates
         # We allow partial updates. If a key is present in plan_data, it overwrites/appends.
-        for key in ["observations", "variables", "constraints", "strategy", "verification", "current_code"]:
+        for key in ["observations", "variables", "constraints", "strategy", "verification", "current_code", "problems"]:
             if key in plan_data:
                 val = plan_data[key]
                 # Sanitize Observations (Flatten Objects to Strings)
@@ -480,8 +481,17 @@ class SATManager:
             content += f"## Variables\n{json.dumps(state.plan.get('variables', []), indent=2)}\n\n"
             content += f"## Constraints\n{json.dumps(state.plan.get('constraints', []), indent=2)}\n\n"
             content += f"## Strategy\n{state.plan.get('strategy', '')}\n\n"
-            content += f"## Current Code\n```json\n{json.dumps(state.plan.get('current_code', []), indent=2)}\n```\n"
+            content += f"## Current Code\n```json\n{json.dumps(state.plan.get('current_code', []), indent=2)}\n```\n\n"
+            content += f"## Problems\n{json.dumps(state.plan.get('problems', []), indent=2)}\n\n"
             
+            # Generated Code Section
+            try:
+                backend = self.registry.get(state.active_ir_backend)
+                code_view = backend.generate_code(state)
+                content += f"## Generated Code (Backend: {backend.name})\n```text\n{code_view}\n```\n"
+            except Exception as e:
+                content += f"## Generated Code\nError generating code view: {e}\n"
+
             with open("PLAN.md", "w") as f:
                 f.write(content)
         except Exception as e:

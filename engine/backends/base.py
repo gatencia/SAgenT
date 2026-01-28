@@ -20,6 +20,11 @@ class IRBackend(abc.ABC):
     def allowed_kinds(self) -> Dict[str, Any]:
         pass
 
+    @abc.abstractmethod
+    def generate_code(self, state: AgentState) -> str:
+        """Return the actual code/representation that would be sent to the solver."""
+        pass
+
     def get_prompt_doc(self) -> str:
         """Return specific instructions/hints for the LLM on how to use this backend."""
         return f"Backend {self.name}: No specific instructions provided."
