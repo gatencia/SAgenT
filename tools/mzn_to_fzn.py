@@ -26,8 +26,8 @@ def compile_to_flatzinc(mzn_file):
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode != 0:
-            print(f"Error compiling MiniZinc:\n{result.stderr}")
-            sys.exit(1)
+            # DO NOT sys.exit here. The backend needs to catch this.
+            raise RuntimeError(f"MiniZinc Error:\n{result.stderr}")
             
         if not os.path.exists(fzn_file):
              # Try checking if it wrote to stdout or default name
@@ -39,8 +39,7 @@ def compile_to_flatzinc(mzn_file):
         return content
 
     except FileNotFoundError:
-        print("Error: 'minizinc' executable not found in PATH.")
-        sys.exit(1)
+        raise RuntimeError("Error: 'minizinc' executable not found in PATH.")
 
 def parse_flatzinc(fzn_content):
     """
@@ -62,7 +61,8 @@ def parse_flatzinc(fzn_content):
     # Regex for constraints
     # constraint bool_or(x, y, z);
     # constraint int_le(a, b);
-    constraint_pattern = re.compile(r"constraint\s+([a-zA-Z0-9_]+)\((.*)\);")
+    # Regex for constraints: constraint id(args) [:: ann];
+    constraint_pattern = re.compile(r"constraint\s+([a-zA-Z0-9_]+)\((.*?)\)(?:\s*::\s*.*)?;")
 
     for line in lines:
         line = line.strip()

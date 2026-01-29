@@ -7,6 +7,16 @@ from engine.actions import ActionType
 from engine.backends.registry import IRBackendRegistry
 from engine.sat_manager import SATManager
 
+# ANSI Colors
+BLUE = "\033[94m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+_CLR = "\033[K" # Clear from cursor to end of line
+
 class ReActAgent:
     def __init__(self, 
                  llm_callable: Callable[[str], str], 
@@ -34,9 +44,10 @@ class ReActAgent:
         while not state.finished and state.step_count < self.max_steps:
             state.step_count += 1
             
-            # 1. Print Pre-Request Status
+            # 1. New Step Header
             phase_str = f"[{state.current_phase.value}]" if state.current_phase else ""
-            print(f"Step {state.step_count} {phase_str} Thinking...", end="\r", flush=True)
+            print(f"\n{BOLD}{BLUE}Step {state.step_count} {phase_str}{RESET}")
+            print(f"{DIM}Thinking...{RESET}", end="\r", flush=True)
             
             history_prompt = self._construct_prompt(goal, state)
             raw = self.llm_callable(history_prompt)
@@ -51,11 +62,32 @@ class ReActAgent:
             action_type = resp["action"]
             action_input = resp["action_input"]
 
-            # 2. Print Action Status
-            print(f"Step {state.step_count} {phase_str} Action: {action_type.value}...", end="\r", flush=True)
+            # 2. Print Thought & Action
+            # Clear the "Thinking..." line (cursor is already at start due to \r)
+            print(f"{_CLR}", end="", flush=True)
+            
+            thought = resp.get("thought", "")
+            if thought:
+                print(f"{BLUE}Thought: {thought}{RESET}")
+            
+            # Formatting Input (No Truncation)
+            inp_str = str(action_input)
+            # if len(inp_str) > 100: inp_str = inp_str[:100] + "..." 
+            
+            print(f"{YELLOW}{BOLD}Action: {action_type.value}{RESET} {YELLOW}{inp_str}{RESET}")
 
             # Execute Action
             obs = self._execute(state, action_type, action_input)
+            
+            # Print Result (Observation) (No Truncation)
+            obs_str = str(obs)
+            clean_obs = obs_str.replace("\n", " ")
+            # if len(clean_obs) > 150: clean_obs = clean_obs[:150] + "..."
+            
+            if "Error" in obs_str:
+                print(f"{RED}Result: {clean_obs}{RESET}")
+            else:
+                print(f"{GREEN}Result: {clean_obs}{RESET}")
             
             # Post-Execution Validation Hook
             if action_type == ActionType.DECODE_SOLUTION and state.solution and self.validator_callable:
@@ -80,6 +112,12 @@ class ReActAgent:
             elif action == ActionType.UPDATE_PLAN: return self.sat.update_plan(state, arg)
             elif action == ActionType.ADVANCE_PHASE: return self.sat.advance_phase(state, arg)
             elif action == ActionType.REFINE_FROM_VALIDATION: return self.sat.refine_from_validation(state, arg.get("errors", []))
+            elif action == ActionType.ADD_MINIZINC_CODE: 
+                # Robustness: arg should be string, but might be dict if LLM fails
+                code = arg if isinstance(arg, str) else str(arg)
+                return self.sat.add_minizinc_code(state, code)
+            elif action == ActionType.UPDATE_MODEL_FILE: return self.sat.update_model_file(state, arg)
+            elif action == ActionType.READ_MODEL_FILE: return self.sat.read_model_file(state)
             elif action == ActionType.ADD_MODEL_CONSTRAINTS: return self.sat.add_model_constraints(state, arg)
             elif action == ActionType.REMOVE_MODEL_CONSTRAINTS: return self.sat.remove_model_constraints(state, arg)
             elif action == ActionType.LIST_IR_SCHEMA: return self.sat.get_schema(state)
@@ -174,6 +212,27 @@ class ReActAgent:
         except: raise ValueError(f"Invalid ActionType: {data.get('action')}")
         return data
 
+    def _summarize_variables(self, state) -> str:
+        """Groups variables by prefix to give a concise schema summary."""
+        groups = {}
+        for v in state.sat_variables.keys():
+            # Heuristic: Split by first underscore for high-level grouping
+            # e.g. "pos_R0_T0..." -> "pos" or maybe "pos_R0"
+            parts = v.split('_')
+            prefix = parts[0]
+            if len(parts) > 1: prefix += "_" + parts[1] # e.g. pos_R0
+            
+            if prefix not in groups: groups[prefix] = []
+            groups[prefix].append(v)
+            
+        summary = ""
+        for prefix, vars_in_group in groups.items():
+            count = len(vars_in_group)
+            example = vars_in_group[0]
+            last = vars_in_group[-1]
+            summary += f"- {prefix}* ({count} vars). Range: {example} ... {last}\n"
+        return summary
+
     def _record(self, state, thought, act, obs):
         state.trajectory.append((thought, act, obs))
 
@@ -194,12 +253,12 @@ class ReActAgent:
         prompt += "[CONTEXT STATE]\n"
         
         # Variables
-        vars_list = list(state.sat_variables.keys())
-        prompt += f"REGISTERED VARIABLES ({len(vars_list)}):\n"
-        if len(vars_list) > 100:
-             prompt += f"{vars_list[:100]}... (+{len(vars_list)-100} more)\n"
+        # Variables
+        prompt += f"REGISTERED VARIABLES ({len(state.sat_variables)}):\n"
+        if len(state.sat_variables) > 50:
+             prompt += self._summarize_variables(state)
         else:
-             prompt += f"{vars_list}\n"
+             prompt += f"{list(state.sat_variables.keys())}\n"
 
         # Constraints
         if state.model_constraints:

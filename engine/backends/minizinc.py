@@ -74,6 +74,13 @@ Constraint logic is handled by the solver's CP-SAT engine.
         return []
 
     def generate_code(self, state: AgentState) -> str:
+        # 0. File-Centric Override
+        if state.model_file_path and os.path.exists(state.model_file_path):
+             try:
+                 with open(state.model_file_path, "r") as f:
+                     return f.read()
+             except: pass
+
         # 1. Generate MZN
         mzn_lines = []
         
@@ -112,6 +119,11 @@ Constraint logic is handled by the solver's CP-SAT engine.
                 mzn_lines.append(f"constraint sum([{', '.join(bools)}]) <= {p['k']};")
             # ... (Implement others as needed)
             
+        # 2. Inject Raw Code (High-Level)
+        if hasattr(state, "minizinc_code") and state.minizinc_code:
+            mzn_lines.append("\n% --- User High-Level Code ---")
+            mzn_lines.extend(state.minizinc_code)
+            
         mzn_lines.append("solve satisfy;")
         return "\n".join(mzn_lines)
 
@@ -121,13 +133,26 @@ Constraint logic is handled by the solver's CP-SAT engine.
         """
         mzn_code = self.generate_code(state)
         
+        
         # 1. Write Code to File
-        model_id = uuid.uuid4().hex[:8]
-        f_mzn = f"memory/model_{model_id}.mzn"
+        # Check if we have an active file-based workflow
+        if state.model_file_path and os.path.exists(state.model_file_path):
+            f_mzn = state.model_file_path
+            # We skip 'generate_code' and use this file directly
+        else:
+            # Fallback to generation
+            mzn_code = self.generate_code(state)
+            model_id = uuid.uuid4().hex[:8]
+            f_mzn = f"memory/model_{model_id}.mzn"
+            
+            try:
+                with open(f_mzn, "w") as f:
+                    f.write(mzn_code)
+            except Exception as e:
+                return f"Write Error: {e}"
         
         try:
-            with open(f_mzn, "w") as f:
-                f.write(mzn_code)
+            # 2. Compile to FlatZinc
                 
             # 2. Compile to FlatZinc
             try:
@@ -149,7 +174,7 @@ Constraint logic is handled by the solver's CP-SAT engine.
                     # Int support pending
                 
                 # Reset Harness with correct max_id
-                max_id = local_booleanizer.next_id - 1
+                max_id = local_booleanizer.next_literal_id - 1
                 harness.reset_instrumentation(max_id)
                 
                 # Translate Constraints & Instrument
@@ -172,6 +197,30 @@ Constraint logic is handled by the solver's CP-SAT engine.
                             # Group ID comes from mzn_to_fzn "group" field or fallback
                             gid = c.get("group", f"c_{uuid.uuid4().hex[:4]}")
                             harness.add_group(gid, [clause], {"raw": c["raw"], "type": c["type"]})
+                    
+                    elif c['type'] == 'bool_not':
+                        # bool_not(a, b) => b <-> ~a => (b \/ a) /\ (~b \/ ~a)
+                        args_part = c['args']
+                        # Simple split, might need regex if complex args
+                        parts = [x.strip() for x in args_part.split(',')]
+                        if len(parts) >= 2:
+                            a_name, b_name = parts[0], parts[1]
+                            try:
+                                lit_a = local_booleanizer.get_bool_literal(a_name)
+                                lit_b = local_booleanizer.get_bool_literal(b_name)
+                                
+                                # (b \/ a)
+                                c1 = [lit_b, lit_a]
+                                # (~b \/ ~a)
+                                c2 = [-lit_b, -lit_a]
+                                
+                                gid = c.get("group", f"c_{uuid.uuid4().hex[:4]}_not")
+                                harness.add_group(gid, [c1, c2], {"raw": c["raw"], "type": c["type"]})
+                            except ValueError as e:
+                                print(f"Warning: Skipping bool_not on unknown vars: {e}")
+
+                    else:
+                        print(f"Warning: MiniZinc Backend ignoring unhandled FZN constraint: {c['type']} ({c['args']})")
                 
                 # 4. Diagnose using Harness
                 report = harness.diagnose()
@@ -201,19 +250,61 @@ Constraint logic is handled by the solver's CP-SAT engine.
                                  decoded_vars.append(name)
                                  decoded_map[name] = True
                     
-                    # Write output.txt
-                    with open("output.txt", "w") as f:
-                        f.write(f"SAT\n")
-                        f.write("\n".join(decoded_vars))
-                        
+                    # PREPARE OBSERVATION DATA (Output to Agent, NOT file)
+                    # The Agent is responsible for generating the final report.
+                    
+                    # 1. Variable Legend
+                    sorted_vars = sorted(local_booleanizer.literal_to_info.items())
+                    var_lookup = {lit: info['name'] for lit, info in sorted_vars}
+                    legend_str = "\n".join([f"{lit} <-> {info['name']}" for lit, info in sorted_vars])
+
+                    # 2. Readable CNF
+                    clean_clauses = []
+                    cnf_str_lines = []
+                    for clause in harness.clauses:
+                        clean = [l for l in clause if abs(l) <= max_id]
+                        if clean:
+                            clause_str_parts = []
+                            for l in clean:
+                                v_name = var_lookup.get(abs(l), f"var_{abs(l)}")
+                                if l < 0:
+                                    clause_str_parts.append(f"NOT {v_name}")
+                                else:
+                                    clause_str_parts.append(v_name)
+                            cnf_str_lines.append(f"({' OR '.join(clause_str_parts)})")
+                    cnf_str = "\n".join(cnf_str_lines)
+
+                    # 3. Store Solution in State
                     state.solution = {v: (v in decoded_map) for v in local_booleanizer.var_map.keys() if local_booleanizer.var_map[v]["type"] == 'bool'}
                     solver.delete()
-                    return "SAT"
+                    
+                    # Return RICH observation
+                    return (f"Solution Found!\n\n"
+                            f"=== VARIABLE LEGEND ===\n{legend_str}\n\n"
+                            f"=== FULL CNF CLAUSES ===\n{cnf_str}\n\n"
+                            f"=== RAW SOLUTION ===\n{', '.join(decoded_vars)}\n\n"
+                            f"INSTRUCTION: Use this information to write the final detailed report using the FINISH action.")
                 
                 else:
                     # UNSAT
+                    # EXPORT CNF (User Request: Debug why CNF is wrong)
+                    cnf_file = "output.cnf"
+                    
+                    # We need to build a temp solver to dump constraints, as we didn't keep one open.
+                    # Harness has the clauses.
+                    # dump_solver = Solver(name="g3", bootstrap_with=harness.clauses)
+                    # dump_solver.to_file(cnf_file)
+                    # dump_solver.delete()
+                    
                     core_groups = report.get("minimized_core", [])
-                    return f"UNSAT. Core Groups: {core_groups[:5]}... (See output_debug.json)"
+                    # Provide clearer feedback
+                    reason_msg = f"UNSAT. The constraints are contradictory."
+                    if core_groups:
+                         reason_msg += f"\nConflict Core (Failed Constraints):\n"
+                         for i, cg in enumerate(core_groups[:5]): # Show top 5
+                             reason_msg += f"  - Group {cg}\n"
+                         reason_msg += f"  (Total {len(core_groups)} conflicting groups. See output_debug.json for full details)"
+                    return reason_msg
 
             except Exception as e:
                 # import traceback

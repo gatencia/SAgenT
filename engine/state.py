@@ -17,9 +17,7 @@ class ModelingConstraint:
         return dataclasses.asdict(self)
 
 class AgentPhase(str, Enum):
-    OBSERVATION = "OBSERVATION"
-    VARIABLES = "VARIABLES"
-    CONSTRAINTS = "CONSTRAINTS"
+    PLANNING = "PLANNING"
     IMPLEMENTATION = "IMPLEMENTATION"
     DEBUGGING = "DEBUGGING"
 
@@ -34,13 +32,15 @@ class AgentState:
     sat_variables: Dict[str, int] = field(default_factory=dict)
     next_var_id: int = 1
     model_constraints: List[ModelingConstraint] = field(default_factory=list)
+    minizinc_code: List[str] = field(default_factory=list) # Raw high-level code
+    model_file_path: Optional[str] = None # Path to the active file being edited
     
     # Active Backend
     active_ir_backend: str = "pb"
     
     # Planning
     plan: Optional[Dict[str, Any]] = None # {observations, variables, constraints, strategy, verification}
-    current_phase: AgentPhase = AgentPhase.OBSERVATION # Strict Phase Control
+    current_phase: AgentPhase = AgentPhase.PLANNING # Strict Phase Control
 
     # Execution
     cnf_clauses: List[List[int]] = field(default_factory=list)

@@ -207,24 +207,59 @@ def call_simulated_llm(prompt: str) -> str:
                 step = max(step, sid + 1)
             except: pass
             
-    # Policy for mrpp_6x6_3r_T8
+    # Policy for mrpp_6x6_3r_T8 (Phased)
     if step == 0:
         return json.dumps({
-            "thought": "Define Variables for 3 robots over 8 steps.",
-            "action": "DEFINE_VARIABLES",
-            "action_input": ["R1", "R2"] # Dummy vars just to pass
+            "thought": "Start in Observation phase. Update plan.",
+            "action": "UPDATE_PLAN",
+            "action_input": {
+                "plan": "1. Define vars\n2. Add constraints\n3. Solve", 
+                "problem_notes": "We formulate the Multi-Robot Path Planning task as a decision problem. Let R be a set of robots on a G=(V,E) grid graph. The goal is to move each robot r from start s_r to goal g_r in T=8 timesteps without collisions.",
+                "observations": ["Board is 6x6 grid", "3 Robots involved", "Time Horizon T=8"],
+                "variables": [
+                    "pos_R0_t0...tT: Boolean variable indicating if Robot 0 is at specific coordinate at time t.",
+                    "p_0, p_1: Auxiliary boolean variables for demonstration."
+                ],
+                "strategy": "We employ a Time-Expanded Graph encoding. We create boolean variables for every valid (robot, time, location) tuple. Constraints ensure: 1) Each robot is at exactly one place per time step. 2) Moves follow grid adjacency. 3) No vertex or edge collisions allowed.",
+                "verification": "CONFIRMED"
+            }
         })
     elif step == 1:
         return json.dumps({
-            "thought": "Inject solution directly into state.solution via ACTION_INPUT hack? No, can't.",
-            # We can't actually solve it without pysat unless we mock DECODE_SOLUTION behavior too.
-            # But we can try to return FINISH, but the checker will fail.
-            # Wait, if pysat is missing, we can't solve.
-            # So simulated mode is limited to checking the harness flow.
+            "thought": "Advance to Variables phase.",
+            "action": "ADVANCE_PHASE", 
+            "action_input": {}
+        })
+    elif step == 2:
+        return json.dumps({
+            "thought": "Define variables.",
+            "action": "DEFINE_VARIABLES",
+            "action_input": ["pos_R0_t0", "pos_R0_t1"] 
+        })
+    elif step == 3:
+        return json.dumps({
+            "thought": "Advance to Constraints phase.",
+            "action": "ADVANCE_PHASE",
+            "action_input": {}
+        })
+    elif step == 4:
+        return json.dumps({
+            "thought": "Add MiniZinc Code directly (using Boolean vars only).",
+            "action": "ADD_MINIZINC_CODE",
+            "action_input": "var bool: p_0; var bool: p_1; constraint p_0 != p_1;"
+        })
+    elif step == 5:
+        return json.dumps({
+            "thought": "Solve the model.",
+            "action": "SOLVE",
+            "action_input": {}
+        })
+    elif step == 6:
+        return json.dumps({
+            "thought": "Finish.",
             "action": "FINISH",
             "action_input": {}
         })
-    
     
     return json.dumps({"action": "FINISH", "action_input": {}})
 
@@ -264,6 +299,10 @@ def run_benchmark(args):
     checkers_dir = os.path.join(base_dir, "checkers")
     runs_dir = os.path.join(base_dir, "runs")
     
+    # Cleanup old artifacts
+    if os.path.exists("output.txt"): os.remove("output.txt")
+    if os.path.exists("output_debug.json"): os.remove("output_debug.json")
+
     if not os.path.exists(runs_dir):
         os.makedirs(runs_dir)
 

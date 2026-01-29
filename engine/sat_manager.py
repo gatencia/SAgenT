@@ -14,6 +14,15 @@ try:
 except ImportError:
     Solver = Any
 
+# ANSI Colors
+BLUE = "\033[94m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+
 class SATManager:
     def __init__(self, registry: Optional[IRBackendRegistry] = None):
         self.solver_name = 'g3'
@@ -374,7 +383,7 @@ class SATManager:
 
         # 2. Merge Updates
         # We allow partial updates. If a key is present in plan_data, it overwrites/appends.
-        for key in ["observations", "variables", "constraints", "strategy", "verification", "current_code", "problems"]:
+        for key in ["observations", "variables", "constraints", "strategy", "verification", "current_code", "problems", "problem_notes"]:
             if key in plan_data:
                 val = plan_data[key]
                 # Sanitize Observations (Flatten Objects to Strings)
@@ -420,57 +429,50 @@ class SATManager:
         
         # --- DETERMINISTIC PHASE GUIDANCE ---
         current = state.current_phase
-        if current == "OBSERVATION":
-            obs = state.plan.get("observations", [])
-            plan_vars = state.plan.get("variables", [])
-            strat = state.plan.get("strategy", "")
-            if len(obs) >= 3 and strat:
-                 if plan_vars: # If they also added variables, that's great
-                     return "Plan updated. [OBSERVATION PHASE COMPLETE]. Observations recorded. You MUST now call 'ADVANCE_PHASE' to proceed to VARIABLES."
-                 return "Plan updated. [OBSERVATION PHASE COMPLETE]. You have sufficient observations. Call 'ADVANCE_PHASE' now."
         
-        if current == "VARIABLES":
-            plan_vars = state.plan.get("variables", [])
-            # Check if actual variables are registered?
-            if plan_vars and len(state.sat_variables) > 0:
-                 return "Plan updated. [VARIABLES PHASE COMPLETE]. Variables defined. You MUST now call 'ADVANCE_PHASE' to proceed to CONSTRAINTS."
-            if plan_vars and not state.sat_variables:
-                 return "Plan updated. Variables listed in plan. NOW use 'DEFINE_VARIABLES' to register them."
+        if current == AgentPhase.PLANNING:
+            status = state.plan.get("verification", "DRAFT")
+            if status == "CONFIRMED":
+                 return "Plan updated and CONFIRMED. You MUST now call 'ADVANCE_PHASE' to proceed to IMPLEMENTATION."
+            return f"Plan updated (Status: {status}). You must define Observations, Variables, and Constraints, then set verification to 'CONFIRMED'."
 
-        if current == "CONSTRAINTS":
-            plan_constrs = state.plan.get("constraints", [])
-            if plan_constrs and state.model_constraints:
-                 return "Plan updated. [CONSTRAINTS PHASE COMPLETE]. Constraints added. You MUST now call 'ADVANCE_PHASE' to proceed to IMPLEMENTATION."
+        return f"Plan updated (Status: {state.plan.get('verification')})."
 
-        status = state.plan.get("verification", "DRAFT")
-        return f"Plan updated (Status: {status}). Continue refining or ADVANCE_PHASE if ready."
+    def finish_action(self, state: AgentState, args: Dict[str, Any]) -> str:
+        state.finished = True
+        state.final_status = "FINISHED"
+
+        # Agent-Driven Reporting
+        if "report" in args:
+             try:
+                 with open("output.txt", "w") as f:
+                     f.write(args["report"])
+                 return "Terminating. Final Report written to output.txt."
+             except Exception as e:
+                 return f"Terminating. Failed to write report: {e}"
+
+        return "Terminating"
 
     def advance_phase(self, state: AgentState, _: Any = None) -> str:
         current = state.current_phase
         
         # Validation before leaving current phase
-        if current == AgentPhase.OBSERVATION:
-            if not state.plan or not state.plan.get("observations"):
-                return "Error: Cannot advance. You must first populate 'observations' via UPDATE_PLAN."
-            state.current_phase = AgentPhase.VARIABLES
-            return "Phase advanced to VARIABLES. Goal: Define all variables using 'DEFINE_VARIABLES'."
-
-        elif current == AgentPhase.VARIABLES:
-            if not state.sat_variables:
-                return "Error: Cannot advance. You must define at least one variable via 'DEFINE_VARIABLES'."
-            state.current_phase = AgentPhase.CONSTRAINTS
-            return "Phase advanced to CONSTRAINTS. Goal: Add constraints using 'ADD_MODEL_CONSTRAINTS'."
-
-        elif current == AgentPhase.CONSTRAINTS:
-            if not state.model_constraints:
-                 return "Error: Cannot advance. You must add at least one constraint via 'ADD_MODEL_CONSTRAINTS'."
+        if current == AgentPhase.PLANNING:
+            if state.plan.get("verification") != "CONFIRMED":
+                return "Error: Cannot advance from PLANNING. You must set 'verification': 'CONFIRMED' in your plan first."
             state.current_phase = AgentPhase.IMPLEMENTATION
-            return "Phase advanced to IMPLEMENTATION. Goal: Verify logic, then call 'SOLVE'."
+            return "Phase advanced to IMPLEMENTATION. Goal: Write MiniZinc code using 'UPDATE_MODEL_FILE' and then 'SOLVE'."
 
         elif current == AgentPhase.IMPLEMENTATION:
+            # If we are here, we might be stuck or failed solving. Move to DEBUGGING.
             state.current_phase = AgentPhase.DEBUGGING
             return "Phase advanced to DEBUGGING. Goal: Review solution, fix issues, or refine model."
             
+        elif current == AgentPhase.DEBUGGING:
+            # Loop back to IMPLEMENTATION to retry
+            state.current_phase = AgentPhase.IMPLEMENTATION
+            return "Phase cycled back to IMPLEMENTATION. Retry solving."
+
         return f"Already in final phase {current}"
 
     def _write_plan_to_file(self, state: AgentState):
@@ -494,6 +496,10 @@ class SATManager:
 
             with open("PLAN.md", "w") as f:
                 f.write(content)
+            print(f"{DIM}SATManager: Wrote PLAN.md ({len(content)} bytes){RESET}")
+        except Exception as e:
+            print(f"{RED}SATManager: PLAN.md Write Failed: {e}{RESET}")
+            return f"Plan updated in state, but failed to write PLAN.md: {e}"
         except Exception as e:
             return f"Plan updated in state, but failed to write PLAN.md: {e}"
         except Exception as e:
@@ -520,6 +526,11 @@ class SATManager:
 
     def add_model_constraints(self, state: AgentState, constraints_data: List[Dict[str, Any]]) -> str:
         if not state.plan: return "Error: You MUST call 'CREATE_PLAN' before adding constraints."
+        
+        # File-Centric Guard
+        if state.model_file_path:
+             return f"Error: You are in File-Centric mode ({state.model_file_path}). You cannot use 'ADD_MODEL_CONSTRAINTS'. Please use 'UPDATE_MODEL_FILE' to append constraints to the file."
+
         added_count = 0
         try:
             backend = self.registry.get(state.active_ir_backend)
@@ -553,7 +564,68 @@ class SATManager:
             return f"Error: {str(e)}"
         return f"Added {added_count} constraints."
 
+    def add_minizinc_code(self, state: AgentState, code: str) -> str:
+        if not state.plan: return "Error: You MUST call 'UPDATE_PLAN' before adding code."
+        if "backend" in self.registry.get(state.active_ir_backend).name and "minizinc" not in self.registry.get(state.active_ir_backend).name:
+             return f"Error: Active backend is {state.active_ir_backend}, raw MiniZinc code is likely invalid."
+        
+        # Basic validation (non-empty)
+        if not code.strip(): return "Error: Empty code block."
+        
+        state.minizinc_code.append(code)
+        return "Added raw MiniZinc code block."
+
+    def update_model_file(self, state: AgentState, args: Dict[str, Any]) -> str:
+        if not state.plan: return "Error: Call UPDATE_PLAN first."
+        if state.current_phase == AgentPhase.PLANNING:
+             return f"Error: You are in PLANNING phase. You cannot write code files yet. Please use 'UPDATE_PLAN' to conceptualize your strategy. Confirm plan to advance to IMPLEMENTATION."
+        
+        content = args.get("content", "")
+        mode = args.get("mode", "append") # 'append' or 'overwrite'
+        
+        # Determine path
+        if not state.model_file_path:
+            # Create a unique path or standard path
+            # We use a standard path per run to allow clean overrides
+            state.model_file_path = "memory/current_model.mzn"
+            
+        # Ensure dir exists
+        import os
+        os.makedirs(os.path.dirname(state.model_file_path), exist_ok=True)
+        
+        try:
+            file_mode = "a" if mode == "append" else "w"
+            # If append and file doesn't exist, it creates it.
+            # If overwrite, it truncates.
+            
+            with open(state.model_file_path, file_mode) as f:
+                if mode == "append" and os.path.getsize(state.model_file_path) > 0:
+                    f.write("\n") # Ensure newline separator
+                f.write(content)
+            
+            size = os.path.getsize(state.model_file_path)
+            print(f"{DIM}SATManager: Updated file {state.model_file_path} ({size} bytes){RESET}")
+            return f"Success. Updated {state.model_file_path} (Mode: {mode}). New Size: {size} bytes."
+        except Exception as e:
+            return f"File I/O Error: {e}"
+
+    def read_model_file(self, state: AgentState) -> str:
+        if not state.model_file_path: return "No active model file created yet."
+        import os
+        if not os.path.exists(state.model_file_path): return "File does not exist."
+        
+        try:
+            with open(state.model_file_path, "r") as f:
+                content = f.read()
+            return f"--- FILE: {state.model_file_path} ---\n{content}\n--- END FILE ---"
+        except Exception as e:
+            return f"Read Error: {e}"
+
     def remove_model_constraints(self, state: AgentState, ids: List[str]) -> str:
+        # File-Centric Guard
+        if state.model_file_path:
+             return f"Error: You are in File-Centric mode ({state.model_file_path}). You cannot use 'REMOVE_MODEL_CONSTRAINTS'. The constraints are in the file, not in the object list. Please use 'UPDATE_MODEL_FILE(mode='overwrite', content=...)' to rewrite the file with the fix."
+
         orig = len(state.model_constraints)
         state.model_constraints = [c for c in state.model_constraints if c.id not in ids]
         return f"Removed {orig - len(state.model_constraints)} constraints."
@@ -611,8 +683,24 @@ class SATManager:
             except Exception as e:
                 return f"Backend Solve Error: {e}"
 
+        if hasattr(backend, "solve") and callable(backend.solve):
+            try:
+                # The backend handles specific compilation and solving
+                print(f"{DIM}SATManager: Delegating solve to backend {backend.name}...{RESET}")
+                msg = backend.solve(state)
+                # Ensure generic success message for agent flow if strictly valid
+                if "Solution Found" in msg:
+                    # Depending on backend, solution might be stored in state.solution
+                    print(f"{GREEN}SATManager: Backend returned Solution Found.{RESET}")
+                    return "Solution Found (Stored in state). Validation Pending."
+                print(f"{RED}SATManager: Backend msg: {msg}{RESET}")
+                return msg
+            except Exception as e:
+                return f"Backend Solve Error: {e}"
+
         # Default PySAT Logic (for 'pb', 'cnf')
         try:
+            print(f"{DIM}SATManager: Compiling to CNF...{RESET}")
             self._compile(state)
         except Exception as e:
             return f"Compilation Failed: {e}"
@@ -620,8 +708,10 @@ class SATManager:
         if not state.cnf_clauses: return "No Constraints compiled."
 
         try:
+            print(f"{DIM}SATManager: Solving CNF ({len(state.cnf_clauses)} clauses)...{RESET}")
             s = Solver(name=self.solver_name, bootstrap_with=state.cnf_clauses)
             if s.solve():
+                print(f"{GREEN}SATManager: SAT! Decoding model...{RESET}")
                 m = s.get_model()
                 assignment = {v: (v > 0) for v in m}
                 result = {k: assignment[v] for k, v in state.sat_variables.items() if v in assignment}
