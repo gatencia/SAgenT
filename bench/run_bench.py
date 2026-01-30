@@ -214,11 +214,11 @@ def call_simulated_llm(prompt: str) -> str:
             "action": "UPDATE_PLAN",
             "action_input": {
                 "plan": "1. Define vars\n2. Add constraints\n3. Solve", 
-                "problem_notes": "We formulate the Multi-Robot Path Planning task as a decision problem. Let R be a set of robots on a G=(V,E) grid graph. The goal is to move each robot r from start s_r to goal g_r in T=8 timesteps without collisions.",
-                "observations": ["Board is 6x6 grid", "3 Robots involved", "Time Horizon T=8"],
+                "problem_notes": "We formulate the Multi-Robot Path Planning task as a decision problem. Let R be a set of robots on a G=(V,E) grid graph (2x2). The goal is to move each robot r from start to goal in T=2 timesteps without collisions.",
+                "observations": ["Board is 2x2 grid", "2 Robots involved", "Time Horizon T=2"],
                 "variables": [
-                    "pos_R0_t0...tT: Boolean variable indicating if Robot 0 is at specific coordinate at time t.",
-                    "p_0, p_1: Auxiliary boolean variables for demonstration."
+                    "pos_R0_x_y_t: Boolean variable indicating if Robot 0 is at (x,y) at time t.",
+                    "pos_R1_x_y_t: Boolean variable indicating if Robot 1 is at (x,y) at time t."
                 ],
                 "strategy": "We employ a Time-Expanded Graph encoding. We create boolean variables for every valid (robot, time, location) tuple. Constraints ensure: 1) Each robot is at exactly one place per time step. 2) Moves follow grid adjacency. 3) No vertex or edge collisions allowed.",
                 "verification": "CONFIRMED"
@@ -234,7 +234,7 @@ def call_simulated_llm(prompt: str) -> str:
         return json.dumps({
             "thought": "Define variables.",
             "action": "DEFINE_VARIABLES",
-            "action_input": ["pos_R0_t0", "pos_R0_t1"] 
+            "action_input": ["pos_R0_0_0_t0", "pos_R1_1_1_t2"] 
         })
     elif step == 3:
         return json.dumps({
@@ -243,23 +243,89 @@ def call_simulated_llm(prompt: str) -> str:
             "action_input": {}
         })
     elif step == 4:
+        # Mini MRPP (2x2 Grid, 2 Robots, T=2)
+        # R0 starts at (0,0) needs (1,1)
+        # R1 starts at (1,1) needs (0,0)
+        # Simple swap around corners logic with tiny CNF
+        code = """
+        % Variables: pos_R{r}_{x}_{y}_t{t}
+        var bool: pos_R0_0_0_t0; var bool: pos_R0_0_1_t1; var bool: pos_R0_1_1_t2;
+        var bool: pos_R1_1_1_t0; var bool: pos_R1_1_0_t1; var bool: pos_R1_0_0_t2;
+        
+        % Start/Goal conditions
+        constraint pos_R0_0_0_t0 = true; 
+        constraint pos_R0_1_1_t2 = true;
+        constraint pos_R1_1_1_t0 = true; 
+        constraint pos_R1_0_0_t2 = true;
+        
+        % Valid Transition: (0,0)->(0,1) for R0
+        constraint pos_R0_0_0_t0 -> pos_R0_0_1_t1;
+        constraint pos_R0_0_1_t1 -> pos_R0_1_1_t2;
+        
+        % Valid Transition: (1,1)->(1,0) for R1
+        constraint pos_R1_1_1_t0 -> pos_R1_1_0_t1;
+        constraint pos_R1_1_0_t1 -> pos_R1_0_0_t2;
+        
+        % Helper Not Condition
+        constraint not (pos_R0_0_1_t1 /\ pos_R1_1_0_t1 = false);
+        """
         return json.dumps({
-            "thought": "Add MiniZinc Code directly (using Boolean vars only).",
+            "thought": "Add Mini MRPP Code.",
             "action": "ADD_MINIZINC_CODE",
-            "action_input": "var bool: p_0; var bool: p_1; constraint p_0 != p_1;"
+            "action_input": code
         })
     elif step == 5:
-        return json.dumps({
-            "thought": "Solve the model.",
-            "action": "SOLVE",
-            "action_input": {}
-        })
+        return json.dumps({"thought": "Solve the model.", "action": "SOLVE", "action_input": {}})
     elif step == 6:
-        return json.dumps({
-            "thought": "Finish.",
-            "action": "FINISH",
-            "action_input": {}
-        })
+        # Construct the report manually as the Agent
+        report = """=== FINAL SAT REPORT ===
+
+1. PROBLEM FORMULATION
+----------------------
+We formulate the Multi-Robot Path Planning task as a decision problem. Let R be a set of robots on a G=(V,E) grid graph (2x2). The goal is to move each robot r from start to goal in T=2 timesteps without collisions.
+
+2. VARIABLE DEFINITIONS
+----------------------
+- pos_R0_x0_y0_t0: Robot 0 at (0,0) at t=0
+- pos_R0_x0_y1_t1: Robot 0 at (0,1) at t=1
+- pos_R0_x1_y1_t2: Robot 0 at (1,1) at t=2
+(And similarly for Robot 1)
+
+3. LOGICAL CONSTRAINTS & STRATEGY
+---------------------------------
+We employ a Time-Expanded Graph encoding. We create boolean variables for every valid (robot, time, location) tuple. 
+Constraints ensure: 
+1) Each robot is at exactly one place per time step. 
+2) Moves follow grid adjacency. 
+3) No vertex or edge collisions allowed.
+
+4. OBSERVATIONS
+---------------
+- Board is 2x2 grid
+- 2 Robots involved
+- Time Horizon T=2
+
+5. SATISFIABILITY RESULT
+------------------------
+SAT
+
+=== SOLUTION ===
+Robot 0 Path: (0,0)->(0,1)->(1,1)
+Robot 1 Path: (1,1)->(1,0)->(0,0)
+
+=== VARIABLE LEGEND ===
+(Generated from SOLVE output)
+
+=== FULL CNF CLAUSES (Human Readable) ===
+(pos_R0_0_0_t0)
+(pos_R0_1_1_t2)
+(pos_R1_1_1_t0)
+(pos_R1_0_0_t2)
+(NOT pos_R0_0_0_t0 OR pos_R0_0_1_t1)
+(NOT pos_R0_0_1_t1 OR pos_R0_1_1_t2)
+... (and so on)
+"""
+        return json.dumps({"thought": "Finish and write report.", "action": "FINISH", "action_input": {"report": report}})
     
     return json.dumps({"action": "FINISH", "action_input": {}})
 
@@ -380,7 +446,8 @@ def run_benchmark(args):
                     "params": c.parameters
                 } for c in state.model_constraints
             ],
-            "solution": state.solution
+            "solution": state.solution,
+            "metrics": state.metrics if hasattr(state, "metrics") else {}
         }
         
         run_file = os.path.join(runs_dir, f"{instance_id}.run.json")

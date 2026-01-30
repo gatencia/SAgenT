@@ -127,7 +127,7 @@ class ReActAgent:
                 if not isinstance(arg, dict): return "Error: Input must be dict"
                 return self.sat.fuzz_constraints(state, arg)
             elif action == ActionType.DECODE_SOLUTION: return self.sat.decode_solution(state)
-            elif action == ActionType.FINISH: return "Terminating"
+            elif action == ActionType.FINISH: return self.sat.finish_action(state, arg)
             elif action == ActionType.ADD_CONSTRAINTS: return "Deprecated"
             elif action == ActionType.REFINE_MODEL: return self.sat.refine_model(state, arg)
             else: return f"Unknown Action {action}"

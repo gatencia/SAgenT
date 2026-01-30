@@ -49,6 +49,18 @@ class AgentState:
     
     fuzz_log: List[Dict[str, Any]] = field(default_factory=list)
     compile_report: Optional[Dict[str, Any]] = None
+    
+    # Telemetry & Research Logs
+    metrics: Dict[str, Any] = field(default_factory=lambda: {
+        "syntax_errors": 0,
+        "schema_violations": 0,
+        "rejections": 0,
+        "iterations_to_valid": 0,
+        "fuzz_failures": 0,
+        "unsat_cores_trigger": 0,
+        "first_shot_success": False
+    })
+    run_logs: List[Dict[str, Any]] = field(default_factory=list) # Timeline of events
 
     def serialize(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)

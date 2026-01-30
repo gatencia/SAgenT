@@ -2,61 +2,89 @@ int: grid_w = 6;
 int: grid_h = 6;
 int: T = 8;
 int: num_robots = 3;
-set of int: R = 1..num_robots;
-set of int: T_RANGE = 1..T;
-set of int: X_RANGE = 1..grid_w;
-set of int: Y_RANGE = 1..grid_h;
 
-array[R, T_RANGE, X_RANGE, Y_RANGE] of var bool: pos;
+array[0..num_robots-1] of int: start_x = [0, 0, 2];
+array[0..num_robots-1] of int: start_y = [0, 5, 0];
+array[0..num_robots-1] of int: goal_x = [5, 5, 2];
+array[0..num_robots-1] of int: goal_y = [5, 0, 5];
 
-% Blocked cells (1-indexed)
-array[1..8, 1..2] of int: blocked_cells = [|2,2 | 2,3 | 2,4 | 5,2 | 5,3 | 5,4 | 3,4 | 4,3|];
+set of int: ROBOTS = 0..num_robots-1;
+set of int: TIME = 0..T-1;
+set of int: GRID_X = 0..grid_w-1;
+set of int: GRID_Y = 0..grid_h-1;
 
-% Robot start/goal positions (1-indexed)
-array[R] of int: start_x = [1, 1, 3];
-array[R] of int: start_y = [1, 6, 1];
-array[R] of int: goal_x = [6, 6, 3];
-array[R] of int: goal_y = [6, 1, 6];
+int: num_blocked = 8;
+array[0..num_blocked-1, 0..1] of int: blocked_cells = [|
+    1, 1 | 1, 2 | 1, 3 |
+    4, 1 | 4, 2 | 4, 3 |
+    2, 3 | 3, 2
+|];
 
-% C1: Each robot must occupy exactly one cell at each timestep.
-constraint forall (r in R, t in T_RANGE) (
-    sum([bool2int(pos[r, t, x, y]) | x in X_RANGE, y in Y_RANGE]) == 1
-  );
+% Variables
+array[ROBOTS, TIME, GRID_X, GRID_Y] of var bool: pos;
+array[ROBOTS, TIME] of var GRID_X: robot_x;
+array[ROBOTS, TIME] of var GRID_Y: robot_y;
 
-% C2: Robots must start at their specified start positions.
-constraint forall (r in R) (
-    pos[r, 1, start_x[r], start_y[r]]
- );
+% Constraints
 
-% C3: Robots must end at their specified goal positions.
-constraint forall (r in R) (
-    pos[r, T, goal_x[r], goal_y[r]]
- );
+% 1. Initial Position
+constraint forall(r in ROBOTS) (
+    pos[r, 0, start_x[r], start_y[r]]
+);
 
-% C4: Robots cannot be in a blocked cell at any time.
-constraint forall (r in R, t in T_RANGE, b in 1..8) (
-    not pos[r, t, blocked_cells[b,1], blocked_cells[b,2]]
- );
+% 2. Goal Position
+constraint forall(r in ROBOTS) (
+    pos[r, T-1, goal_x[r], goal_y[r]]
+);
 
-% C5: Movement constraints: position at t+1 must be adjacent or same as at t.
-constraint forall (r in R, t in 1..T-1, x_curr in X_RANGE, y_curr in Y_RANGE) (
-    if pos[r, t, x_curr, y_curr] then (
-        sum([bool2int(pos[r, t+1, x_next, y_next])
-             | x_next in X_RANGE, y_next in Y_RANGE
-             where abs(x_curr - x_next) + abs(y_curr - y_next) <= 1]) == 1
-    ) endif
- );
+% 3. Exactly One Position & 4. Link pos to robot_x/robot_y
+constraint forall(r in ROBOTS, t in TIME) (
+    sum(x in GRID_X, y in GRID_Y) (int(pos[r, t, x, y])) = 1
+    /\
+    sum(x in GRID_X, y in GRID_Y) (x * int(pos[r, t, x, y])) = robot_x[r, t]
+    /\
+    sum(x in GRID_X, y in GRID_Y) (y * int(pos[r, t, x, y])) = robot_y[r, t]
+);
 
-% C6: Vertex collision: No two robots can occupy the same cell at the same timestep.
-constraint forall (t in T_RANGE, x in X_RANGE, y in Y_RANGE) (
-    sum(r in R)(bool2int(pos[r, t, x, y])) <= 1
- );
+% 5. Movement
+constraint forall(r in ROBOTS, t in 0..T-2) (
+    forall(x in GRID_X, y in GRID_Y where pos[r, t, x, y]) (
+        exists(nx in GRID_X, ny in GRID_Y) (
+            pos[r, t+1, nx, ny]
+            /\
+            abs(nx - x) + abs(ny - y) <= 1
+        )
+    )
+);
 
-% C7: Edge collision: No two robots can swap positions between two adjacent timesteps.
-constraint forall (r1 in R, r2 in R where r1 < r2, t in 1..T-1, x1 in X_RANGE, y1 in Y_RANGE, x2 in X_RANGE, y2 in Y_RANGE) (
-    if (x1 != x2 \/ y1 != y2) then
-        not (pos[r1, t, x1, y1] /\ pos[r2, t, x2, y2] /\ pos[r1, t+1, x2, y2] /\ pos[r2, t+1, x1, y1])
-    endif
- );
+% 6. Blocked Cells
+constraint forall(r in ROBOTS, t in TIME, b in 0..num_blocked-1) (
+    not pos[r, t, blocked_cells[b, 0], blocked_cells[b, 1]]
+);
+
+% 7. Vertex Collision
+constraint forall(t in TIME, x in GRID_X, y in GRID_Y) (
+    sum(r in ROBOTS) (int(pos[r, t, x, y])) <= 1
+);
+
+% 8. Edge Collision
+constraint forall(t in 0..T-2, r1 in ROBOTS, r2 in ROBOTS where r1 < r2) (
+    forall(x1 in GRID_X, y1 in GRID_Y, x2 in GRID_X, y2 in GRID_Y where x1 != x2 \/ y1 != y2) (
+        not (
+            pos[r1, t, x1, y1] /\ pos[r1, t+1, x2, y2] /\
+            pos[r2, t, x2, y2] /\ pos[r2, t+1, x1, y1]
+        )
+    )
+);
 
 solve satisfy;
+
+output
+[
+  "{\n" ++
+  intercalate(",\n", [
+    "\"R" ++ show(r+1) ++ "\": " ++ show([ [robot_x[r,t], robot_y[r,t]] | t in TIME ])
+    | r in ROBOTS
+  ]) ++
+  "\n}\n"
+];

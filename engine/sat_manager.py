@@ -607,8 +607,11 @@ class SATManager:
             print(f"{DIM}SATManager: Updated file {state.model_file_path} ({size} bytes){RESET}")
             return f"Success. Updated {state.model_file_path} (Mode: {mode}). New Size: {size} bytes."
         except Exception as e:
+            if state.metrics: state.metrics["syntax_errors"] += 1
+            print(f"{RED}SATManager: Model Rejected (File I/O Error): {e}{RESET}")
             return f"File I/O Error: {e}"
 
+    
     def read_model_file(self, state: AgentState) -> str:
         if not state.model_file_path: return "No active model file created yet."
         import os
@@ -669,34 +672,57 @@ class SATManager:
         return f"Refining model based on {len(errors)} validation errors. Please REMOVE or ADD constraints."
 
     def solve(self, state: AgentState) -> str:
-        # Hybrid Solve Logic: Delegate to Backend if it supports solving
+        # 1. Auto-Fuzzing (Verification Step)
+        # Even before full compilation, we can verify specific constraints if they exist in object form.
+        # But if we are in File-Centric mode (MiniZinc), fuzzing requires parsing FZN which happens inside backend.solve.
+        # So instead, we let the backend solve, but if the backend SUPPORTS fuzzing hook, we use it.
+        # OR: We implement a generic Fuzzer inside the DebugHarness that runs automatically.
+        
+        # Current Fuzzing hook (lines 162+) works on `model_constraints` (object list).
+        # If we are using pure MiniZinc file, `model_constraints` is likely empty.
+        # However, `fuzz_constraints` compiles a subset.
+        
+        # Let's trust the DebugHarness inside backend.solve to handle the main logic,
+        # BUT we wrap the call to log metrics.
+        
+        import time
+        start_time = time.time()
+        
+        print(f"{DIM}SATManager: Submitting Model to Backend ({state.active_ir_backend})...{RESET}")
+        
         backend = self.registry.get(state.active_ir_backend)
-        if hasattr(backend, "solve") and callable(backend.solve):
-            try:
-                # The backend handles specific compilation and solving
-                msg = backend.solve(state)
-                # Ensure generic success message for agent flow if strictly valid
-                if "Solution Found" in msg:
-                    # Depending on backend, solution might be stored in state.solution
-                    return "Solution Found (Stored in state). Validation Pending."
-                return msg
-            except Exception as e:
-                return f"Backend Solve Error: {e}"
+        try:
+             if hasattr(backend, "solve") and callable(backend.solve):
+                 msg = backend.solve(state)
+                 duration = (time.time() - start_time) * 1000
+                 
+                 # Analyze Result for Logging
+                 if "Solution Found" in msg:
+                     print(f"{GREEN}SATManager: Model Accepted (Time: {duration:.1f}ms){RESET}")
+                     if "metrics" in state.serialize(): # Check if metrics exists
+                         state.metrics["iterations_to_valid"] += 1 
+                         # (Logic to track attempts needed, but simple counter works for now)
+                     return "Solution Found (Stored in state). Validation Pending."
+                 
+                 elif "Compilation Failed" in msg or "Syntax" in msg:
+                     print(f"{RED}SATManager: Model Rejected (Syntax Error){RESET}")
+                     if "metrics" in state.serialize(): state.metrics["syntax_errors"] += 1
+                     return msg
+                     
+                 else:
+                     # Logical Failure or UNSAT
+                     print(f"{YELLOW}SATManager: Model Rejected (Logic/UNSAT){RESET}")
+                     if "metrics" in state.serialize(): state.metrics["rejections"] += 1
+                     # If backend uses Harness, it effectively "fuzzed" (found core).
+                     if "Conflict Core" in msg:
+                         if "metrics" in state.serialize(): state.metrics["unsat_cores_trigger"] += 1
+                     return msg
+        except Exception as e:
+            if "metrics" in state.serialize(): state.metrics["rejections"] += 1
+            return f"Backend Error: {e}"
 
-        if hasattr(backend, "solve") and callable(backend.solve):
-            try:
-                # The backend handles specific compilation and solving
-                print(f"{DIM}SATManager: Delegating solve to backend {backend.name}...{RESET}")
-                msg = backend.solve(state)
-                # Ensure generic success message for agent flow if strictly valid
-                if "Solution Found" in msg:
-                    # Depending on backend, solution might be stored in state.solution
-                    print(f"{GREEN}SATManager: Backend returned Solution Found.{RESET}")
-                    return "Solution Found (Stored in state). Validation Pending."
-                print(f"{RED}SATManager: Backend msg: {msg}{RESET}")
-                return msg
-            except Exception as e:
-                return f"Backend Solve Error: {e}"
+        # Default PySAT Logic (Legacy)
+        # ... legacy code ...
 
         # Default PySAT Logic (for 'pb', 'cnf')
         try:

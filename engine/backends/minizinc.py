@@ -219,6 +219,95 @@ Constraint logic is handled by the solver's CP-SAT engine.
                             except ValueError as e:
                                 print(f"Warning: Skipping bool_not on unknown vars: {e}")
 
+                    elif c['type'] in ['int_lin_le', 'int_lin_le_reif', 'int_lin_eq', 'int_lin_eq_reif']:
+                        # int_lin_le(coeffs, vars, rhs) -> sum(c*v) <= rhs
+                        # Flattening often produces reified versions for complex logic
+                        is_reif = c['type'].endswith('_reif')
+                        # Args: [coeffs], [vars], rhs, (reif_var)
+                        args_str = c['args']
+                        
+                        # Basic parsing of [c,c], [v,v], k, r
+                        # This regex is brittle for nested lists, but standard FZN is flat.
+                        import re
+                        # precise match for: [1,1,1],[v1,v2,v3],1,r
+                        m = re.match(r"\[([\-\d,\s]+)\],\s*\[(.*)\],\s*(\-?\d+)(?:,\s*([a-zA-Z0-9_]+))?", args_str)
+                        if m:
+                            coeffs = [int(x) for x in m.group(1).split(',')]
+                            var_names = [x.strip() for x in m.group(2).split(',')]
+                            rhs = int(m.group(3))
+                            reif_var = m.group(4) if is_reif else None
+                            
+                            # Check if all vars are booleans
+                            # FZN uses explicit types usually, but here we check our registry
+                            try:
+                                lits = []
+                                valid_pb = True
+                                for i, vname in enumerate(var_names):
+                                    info = local_booleanizer.literal_to_info.get(abs(local_booleanizer.get_bool_literal(vname)))
+                                    # We need to recreate the literals. get_bool_literal returns IDs.
+                                    # Warning: get_bool_literal might auto-create if we are not careful, 
+                                    # but we populated from var decls earlier.
+                                    # But wait, PBEnc expects integer literals.
+                                    lit = local_booleanizer.get_bool_literal(vname)
+                                    lits.append(lit * coeffs[i])
+                                
+                                # Use PBEnc
+                                # sum(lits) <= rhs ("atmost") or == rhs ("equals")
+                                cnf = []
+                                c_type = c['type']
+                                
+                                if 'eq' in c_type:
+                                    # equals
+                                    # PBEnc.equals(lits=..., weights=..., bound=...) expects separate weights
+                                    # But lits here are weighted literals? No, PBEnc expects lits and weights separate.
+                                    # Actually lits in my list above include sign but not weight magnitude if using CardEnc.
+                                    # Let's separate.
+                                    
+                                    p_lits = [local_booleanizer.get_bool_literal(n) for n in var_names]
+                                    p_weights = coeffs
+                                    
+                                    if all(w == 1 for w in p_weights):
+                                        # Cardinality is generally better optimized
+                                        cnf = CardEnc.equals(lits=p_lits, bound=rhs, top_id=harness.max_id)
+                                    else:
+                                        cnf = PBEnc.equals(lits=p_lits, weights=p_weights, bound=rhs, top_id=harness.max_id)
+                                        
+                                else:
+                                    # le (<=)
+                                    p_lits = [local_booleanizer.get_bool_literal(n) for n in var_names]
+                                    p_weights = coeffs
+                                    
+                                    if all(w == 1 for w in p_weights):
+                                        cnf = CardEnc.atmost(lits=p_lits, bound=rhs, top_id=harness.max_id)
+                                    else:
+                                        cnf = PBEnc.atmost(lits=p_lits, weights=p_weights, bound=rhs, top_id=harness.max_id)
+                                
+                                # Update max_id for auxiliary variables created by encoding
+                                # PBEnc/CardEnc updates top_id? No, we pass top_id, it returns CNF using new vars > top_id
+                                # We need to track the new max_id used.
+                                # pysat encodings usually return clauses. We can scan clauses for max var.
+                                if cnf:
+                                    new_max = harness.max_id
+                                    for cl in cnf:
+                                        for l in cl:
+                                            new_max = max(new_max, abs(l))
+                                    harness.max_id = new_max
+                                    
+                                    # Handle Reification
+                                    if is_reif and reif_var:
+                                        # reif_var <-> (constraint)
+                                        # This is hard for arbitrary CNF.
+                                        # Simplified: If reified, we might skip or fail.
+                                        # Implementing reified PB is complex (Big-M or indicator constraints).
+                                        # For now, let's Warning on reified PB.
+                                        print(f"Warning: Skipping REIFICATION for int_lin constraint (Complexity): {c['raw']}")
+                                    else:
+                                        gid = c.get("group", f"c_{uuid.uuid4().hex[:4]}_pb")
+                                        harness.add_group(gid, cnf, {"raw": c["raw"], "type": c["type"]})
+                                        
+                            except Exception as e:
+                                print(f"Warning: Failed to encode int_lin as PB: {e}")
+
                     else:
                         print(f"Warning: MiniZinc Backend ignoring unhandled FZN constraint: {c['type']} ({c['args']})")
                 
