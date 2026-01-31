@@ -1,0 +1,165 @@
+{
+    "id": "sokoban_8x8_3b_T12_unsat_deadlock",
+    "family": "sokoban",
+    "natural_language": "Sokoban on an 8x8 grid with 3 boxes and 3 goals in at most 12 moves. Movement is 4-neighbor with pushing. UNSAT because one box starts in a non-goal corner and cannot ever be moved out (deadlock).",
+    "data": {
+        "grid_w": 8,
+        "grid_h": 8,
+        "T": 12,
+        "semantics": {
+            "timesteps_indexed": "0..T",
+            "move_set": "4-neighbor",
+            "push_rule": "push only, no pull",
+            "goal_condition": "all_boxes_on_goals_at_t=T"
+        },
+        "walls": [
+            [
+                0,
+                0
+            ],
+            [
+                1,
+                0
+            ],
+            [
+                2,
+                0
+            ],
+            [
+                3,
+                0
+            ],
+            [
+                4,
+                0
+            ],
+            [
+                5,
+                0
+            ],
+            [
+                6,
+                0
+            ],
+            [
+                7,
+                0
+            ],
+            [
+                0,
+                7
+            ],
+            [
+                1,
+                7
+            ],
+            [
+                2,
+                7
+            ],
+            [
+                3,
+                7
+            ],
+            [
+                4,
+                7
+            ],
+            [
+                5,
+                7
+            ],
+            [
+                6,
+                7
+            ],
+            [
+                7,
+                7
+            ],
+            [
+                0,
+                1
+            ],
+            [
+                0,
+                2
+            ],
+            [
+                0,
+                3
+            ],
+            [
+                0,
+                4
+            ],
+            [
+                0,
+                5
+            ],
+            [
+                0,
+                6
+            ],
+            [
+                7,
+                1
+            ],
+            [
+                7,
+                2
+            ],
+            [
+                7,
+                3
+            ],
+            [
+                7,
+                4
+            ],
+            [
+                7,
+                5
+            ],
+            [
+                7,
+                6
+            ]
+        ],
+        "player_start": [
+            1,
+            1
+        ],
+        "boxes_start": [
+            [
+                1,
+                6
+            ],
+            [
+                3,
+                3
+            ],
+            [
+                6,
+                6
+            ]
+        ],
+        "goals": [
+            [
+                2,
+                2
+            ],
+            [
+                5,
+                5
+            ],
+            [
+                6,
+                5
+            ]
+        ]
+    },
+    "expected": {
+        "sat": false
+    }
+}

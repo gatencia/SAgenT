@@ -1,11 +1,21 @@
 {
-    "id": "mrpp_8x8_4r_T12",
+    "id": "mrpp_8x8_4r_T12_unsat_horizon",
     "family": "mrpp",
-    "natural_language": "Solve a Multi-Robot Path Planning problem on an 8x8 grid for 4 robots over 12 timesteps (T=12). The grid has a central obstacle block.",
+    "natural_language": "MRPP on an 8x8 grid for 4 robots over 12 timesteps (T=12). Movement is 4-neighbor plus wait. Avoid vertex collisions and swap collisions. Decide satisfiable. This is UNSAT due to horizon: each corner-to-opposite-corner requires at least 14 moves but only T-1=11 moves exist.",
     "data": {
         "grid_w": 8,
         "grid_h": 8,
         "T": 12,
+        "semantics": {
+            "timesteps_indexed": "0..T-1",
+            "moves_available": "T-1",
+            "move_set": "4-neighbor+wait",
+            "collision_model": [
+                "no_vertex_collision",
+                "no_edge_swap"
+            ],
+            "goal_enforced_at": "t=T-1"
+        },
         "robots": [
             {
                 "name": "A",
@@ -52,42 +62,9 @@
                 ]
             }
         ],
-        "blocked": [
-            [
-                3,
-                3
-            ],
-            [
-                3,
-                4
-            ],
-            [
-                4,
-                3
-            ],
-            [
-                4,
-                4
-            ],
-            [
-                2,
-                2
-            ],
-            [
-                5,
-                5
-            ],
-            [
-                2,
-                5
-            ],
-            [
-                5,
-                2
-            ]
-        ]
+        "blocked": []
     },
     "expected": {
-        "sat": true
+        "sat": false
     }
 }

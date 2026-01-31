@@ -37,7 +37,7 @@ class DebugHarness:
         self.next_selector = max_var_id + 1000 
 
     def add_group(self, group_id: str, group_clauses: List[List[int]], info: Dict[str, Any]):
-        """
+        r"""
         Add a group of clauses controlled by a unique selector variable 'a_i'.
         Transformation: C -> (C \/ ~a_i).
         If a_i is TRUE, C must be satisfied.
@@ -93,43 +93,49 @@ class DebugHarness:
         """
         
         def test(subset_groups):
-            # Return True if UNSAT (Fail), False if SAT (Pass)
+            if not subset_groups: return False
             assumps = [self.groups[g]["selector"] for g in subset_groups]
             is_sat, _ = self.solve(assumptions=assumps)
-            return not is_sat # If UNSAT, "bug" is present
+            return not is_sat 
 
-        # Standard DDMin implementation
-        # For SAT debug, we look for a minimal set that returns UNSAT (test returns True)
+        # Iterative DDMin (Simplified)
+        # Avoid recursion errors and handle large cores
+        n = 2
+        current_set = list(all_groups)
         
-        def _ddmin(cx):
-            # Base Case
-            if len(cx) == 1: return cx
+        while len(current_set) > 1:
+            subsets = []
+            chunk_size = max(1, len(current_set) // n)
+            for i in range(0, len(current_set), chunk_size):
+                subsets.append(current_set[i:i + chunk_size])
             
-            # Split
-            mid = len(cx) // 2
-            c1 = cx[:mid]
-            c2 = cx[mid:]
+            found = False
+            # 1. Check Subsets
+            for sub in subsets:
+                if test(sub):
+                    current_set = sub
+                    n = 2
+                    found = True
+                    break
+            if found: continue
             
-            # Test halves
-            if test(c1): return _ddmin(c1)
-            if test(c2): return _ddmin(c2)
+            # 2. Check Complements
+            if n < len(current_set):
+                for sub in subsets:
+                    complement = [item for item in current_set if item not in sub]
+                    if test(complement):
+                        current_set = complement
+                        n = max(n - 1, 2)
+                        found = True
+                        break
+                if found: continue
             
-            # Interference
-            return _ddmin(c1 + c2) # Ideally strict ddmin does more here (subsets of c1 U c2)
-            # Full DDMin logic involves complement checks. 
-            # Simplified "Binary Search" style here is faster but maybe not minimal.
-            # Let's do a slightly better linear scan for robustness if list is small (< 50 groups)
-            
-            # Simple Linear Minimization (often better for SAT constraints than strict logarithmic DDMin)
-            current = list(cx)
-            for i in range(len(current) - 1, -1, -1):
-                # Try removing i
-                temp = current[:i] + current[i+1:]
-                if test(temp):
-                    current = temp # It's still UNSAT without i, so i is redundant
-            return current
-
-        return _ddmin(all_groups)
+            if n < len(current_set):
+                n = min(n * 2, len(current_set))
+            else:
+                break
+                
+        return current_set
 
     def diagnose(self) -> Dict[str, Any]:
         """
@@ -178,6 +184,9 @@ class DebugHarness:
                     report["time_minimize"] = time.time() - t_min
                 else:
                     report["minimized_core"] = core_gids
+                    
+                # Rich Info for Conflicts
+                report["conflict_info"] = {gid: self.groups[gid]["info"] for gid in report["minimized_core"]}
                     
         # Model Enumeration (Iterative Blocking)
         if report["status"] == "SAT":

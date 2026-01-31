@@ -1,0 +1,44 @@
+{
+    "id": "poly_pentomino_8x8_two_holes_unsat_area",
+    "family": "polyomino_exact_cover",
+    "natural_language": "Tile an 8x8 board using all 12 free pentominoes exactly once. Rotations/reflections allowed. Two holes are removed. UNSAT because remaining area is 62, but 12 pentominoes cover exactly 60.",
+    "data": {
+        "grid_w": 8,
+        "grid_h": 8,
+        "semantics": {
+            "pieces": "free_pentominoes_12",
+            "use_each_piece_exactly_once": true,
+            "allow_rotations": true,
+            "allow_reflections": true,
+            "placements_must_be_disjoint": true,
+            "covered_cells_must_match": "all_nonblocked_cells"
+        },
+        "blocked": [
+            [
+                0,
+                0
+            ],
+            [
+                7,
+                7
+            ]
+        ],
+        "pieces": [
+            "F",
+            "I",
+            "L",
+            "P",
+            "N",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z"
+        ]
+    },
+    "expected": {
+        "sat": false
+    }
+}

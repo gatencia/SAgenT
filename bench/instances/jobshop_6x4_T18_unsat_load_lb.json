@@ -1,0 +1,128 @@
+{
+    "id": "jobshop_6x4_T18_unsat_load_lb",
+    "family": "jobshop",
+    "natural_language": "Job-shop scheduling with 6 jobs and 4 machines. Decide if a schedule exists with makespan <= 18. This instance is UNSAT because the total required load on machine 0 alone exceeds 18.",
+    "data": {
+        "num_machines": 4,
+        "horizon": 18,
+        "semantics": {
+            "time": "discrete",
+            "precedence": "operations in a job must occur in order",
+            "machine_capacity": "no overlap on same machine",
+            "objective": "decision_makespan_leq_horizon"
+        },
+        "jobs": [
+            [
+                {
+                    "m": 0,
+                    "d": 6
+                },
+                {
+                    "m": 1,
+                    "d": 5
+                },
+                {
+                    "m": 2,
+                    "d": 4
+                },
+                {
+                    "m": 3,
+                    "d": 5
+                }
+            ],
+            [
+                {
+                    "m": 0,
+                    "d": 5
+                },
+                {
+                    "m": 1,
+                    "d": 6
+                },
+                {
+                    "m": 2,
+                    "d": 5
+                },
+                {
+                    "m": 3,
+                    "d": 4
+                }
+            ],
+            [
+                {
+                    "m": 0,
+                    "d": 6
+                },
+                {
+                    "m": 1,
+                    "d": 5
+                },
+                {
+                    "m": 2,
+                    "d": 4
+                },
+                {
+                    "m": 3,
+                    "d": 5
+                }
+            ],
+            [
+                {
+                    "m": 0,
+                    "d": 5
+                },
+                {
+                    "m": 1,
+                    "d": 6
+                },
+                {
+                    "m": 2,
+                    "d": 5
+                },
+                {
+                    "m": 3,
+                    "d": 4
+                }
+            ],
+            [
+                {
+                    "m": 0,
+                    "d": 6
+                },
+                {
+                    "m": 1,
+                    "d": 5
+                },
+                {
+                    "m": 2,
+                    "d": 4
+                },
+                {
+                    "m": 3,
+                    "d": 5
+                }
+            ],
+            [
+                {
+                    "m": 0,
+                    "d": 5
+                },
+                {
+                    "m": 1,
+                    "d": 6
+                },
+                {
+                    "m": 2,
+                    "d": 5
+                },
+                {
+                    "m": 3,
+                    "d": 4
+                }
+            ]
+        ]
+    },
+    "expected": {
+        "sat": false
+    }
+}

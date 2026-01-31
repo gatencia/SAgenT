@@ -10,3 +10,7 @@ __pycache__/
 
 # Benchmark Artifacts
 bench/runs/
+
+*.mzn
+*.fzn
+*.ozn

@@ -1,0 +1,54 @@
+{
+    "id": "slitherlink_5x5_unsat_contradiction",
+    "family": "slitherlink",
+    "natural_language": "Slitherlink on a 5x5 grid. Single-loop constraint. This instance is UNSAT because the clues force a local configuration that makes a single cycle impossible (creates unavoidable degree-1 vertices).",
+    "data": {
+        "grid_w": 5,
+        "grid_h": 5,
+        "semantics": {
+            "loop": "single_cycle",
+            "vertex_degree": "each vertex has degree 0 or 2",
+            "cell_constraint": "number equals selected incident edges (0..3); null means unconstrained"
+        },
+        "clues": [
+            [
+                3,
+                3,
+                3,
+                3,
+                3
+            ],
+            [
+                3,
+                null,
+                null,
+                null,
+                3
+            ],
+            [
+                3,
+                null,
+                0,
+                null,
+                3
+            ],
+            [
+                3,
+                null,
+                null,
+                null,
+                3
+            ],
+            [
+                3,
+                3,
+                3,
+                3,
+                3
+            ]
+        ]
+    },
+    "expected": {
+        "sat": false
+    }
+}

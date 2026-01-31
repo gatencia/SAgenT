@@ -1,0 +1,129 @@
+{
+    "id": "jobshop_6x4_T32_sat",
+    "family": "jobshop",
+    "natural_language": "Job-shop scheduling with 6 jobs and 4 machines. Each job is an ordered list of operations (machine, duration). No machine can process two ops at once. Decide if a schedule exists with makespan <= 32.",
+    "data": {
+        "num_machines": 4,
+        "horizon": 32,
+        "semantics": {
+            "time": "discrete",
+            "op_start_time_domain": "0..horizon",
+            "precedence": "operations in a job must occur in order",
+            "machine_capacity": "no overlap on same machine",
+            "objective": "decision_makespan_leq_horizon"
+        },
+        "jobs": [
+            [
+                {
+                    "m": 0,
+                    "d": 3
+                },
+                {
+                    "m": 1,
+                    "d": 5
+                },
+                {
+                    "m": 2,
+                    "d": 4
+                },
+                {
+                    "m": 3,
+                    "d": 3
+                }
+            ],
+            [
+                {
+                    "m": 1,
+                    "d": 4
+                },
+                {
+                    "m": 2,
+                    "d": 6
+                },
+                {
+                    "m": 3,
+                    "d": 3
+                },
+                {
+                    "m": 0,
+                    "d": 4
+                }
+            ],
+            [
+                {
+                    "m": 2,
+                    "d": 5
+                },
+                {
+                    "m": 3,
+                    "d": 4
+                },
+                {
+                    "m": 0,
+                    "d": 3
+                },
+                {
+                    "m": 1,
+                    "d": 4
+                }
+            ],
+            [
+                {
+                    "m": 3,
+                    "d": 6
+                },
+                {
+                    "m": 0,
+                    "d": 4
+                },
+                {
+                    "m": 1,
+                    "d": 3
+                },
+                {
+                    "m": 2,
+                    "d": 4
+                }
+            ],
+            [
+                {
+                    "m": 0,
+                    "d": 5
+                },
+                {
+                    "m": 2,
+                    "d": 3
+                },
+                {
+                    "m": 1,
+                    "d": 5
+                },
+                {
+                    "m": 3,
+                    "d": 2
+                }
+            ],
+            [
+                {
+                    "m": 1,
+                    "d": 3
+                },
+                {
+                    "m": 3,
+                    "d": 5
+                },
+                {
+                    "m": 2,
+                    "d": 3
+                },
+                {
+                    "m": 0,
+                    "d": 5
+                }
+            ]
+        ]
+    },
+    "expected": {
+        "sat": true
+    }
+}

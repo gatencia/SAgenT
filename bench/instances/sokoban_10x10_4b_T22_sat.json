@@ -1,0 +1,231 @@
+{
+    "id": "sokoban_10x10_4b_T22_sat",
+    "family": "sokoban",
+    "natural_language": "Solve Sokoban on a 10x10 grid with 4 boxes and 4 goals in at most 22 moves. Player moves 4-neighbor; pushing moves one adjacent box one cell if the cell beyond is empty. Boxes cannot be pulled. Decide satisfiable.",
+    "data": {
+        "grid_w": 10,
+        "grid_h": 10,
+        "T": 22,
+        "semantics": {
+            "timesteps_indexed": "0..T",
+            "each_step": "player moves one cell or pushes one box one cell",
+            "move_set": "4-neighbor",
+            "push_rule": "if player moves into a box, the box moves one more cell in same direction into an empty cell",
+            "boxes_indistinguishable": true,
+            "goal_condition": "all_boxes_on_goals_at_t=T"
+        },
+        "walls": [
+            [
+                0,
+                0
+            ],
+            [
+                1,
+                0
+            ],
+            [
+                2,
+                0
+            ],
+            [
+                3,
+                0
+            ],
+            [
+                4,
+                0
+            ],
+            [
+                5,
+                0
+            ],
+            [
+                6,
+                0
+            ],
+            [
+                7,
+                0
+            ],
+            [
+                8,
+                0
+            ],
+            [
+                9,
+                0
+            ],
+            [
+                0,
+                9
+            ],
+            [
+                1,
+                9
+            ],
+            [
+                2,
+                9
+            ],
+            [
+                3,
+                9
+            ],
+            [
+                4,
+                9
+            ],
+            [
+                5,
+                9
+            ],
+            [
+                6,
+                9
+            ],
+            [
+                7,
+                9
+            ],
+            [
+                8,
+                9
+            ],
+            [
+                9,
+                9
+            ],
+            [
+                0,
+                1
+            ],
+            [
+                0,
+                2
+            ],
+            [
+                0,
+                3
+            ],
+            [
+                0,
+                4
+            ],
+            [
+                0,
+                5
+            ],
+            [
+                0,
+                6
+            ],
+            [
+                0,
+                7
+            ],
+            [
+                0,
+                8
+            ],
+            [
+                9,
+                1
+            ],
+            [
+                9,
+                2
+            ],
+            [
+                9,
+                3
+            ],
+            [
+                9,
+                4
+            ],
+            [
+                9,
+                5
+            ],
+            [
+                9,
+                6
+            ],
+            [
+                9,
+                7
+            ],
+            [
+                9,
+                8
+            ],
+            [
+                3,
+                2
+            ],
+            [
+                3,
+                3
+            ],
+            [
+                3,
+                4
+            ],
+            [
+                6,
+                5
+            ],
+            [
+                6,
+                6
+            ],
+            [
+                6,
+                7
+            ]
+        ],
+        "player_start": [
+            2,
+            2
+        ],
+        "boxes_start": [
+            [
+                4,
+                2
+            ],
+            [
+                5,
+                2
+            ],
+            [
+                4,
+                6
+            ],
+            [
+                5,
+                6
+            ]
+        ],
+        "goals": [
+            [
+                7,
+                2
+            ],
+            [
+                7,
+                3
+            ],
+            [
+                7,
+                6
+            ],
+            [
+                7,
+                7
+            ]
+        ]
+    },
+    "expected": {
+        "sat": true
+    }
+}

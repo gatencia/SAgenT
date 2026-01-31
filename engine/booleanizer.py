@@ -1,20 +1,20 @@
 from typing import Dict, Any, List, Optional
+from engine.vars import VarManager
 
 class Booleanizer:
     """
     Manages the translation between FlatZinc variables and SAT literals.
     Handles strict Boolean variables and Integer variables using Order Encoding.
+    Delegates ID allocation to VarManager.
     """
-    def __init__(self):
-        self.next_literal_id = 1
+    def __init__(self, var_manager: Optional[VarManager] = None):
+        self.var_manager = var_manager if var_manager else VarManager()
         self.var_map: Dict[str, Any] = {}
         # Reverse map for decoding (Literal -> Info) could be useful later
         self.literal_to_info: Dict[int, Any] = {}
 
     def _get_new_literal(self) -> int:
-        lit = self.next_literal_id
-        self.next_literal_id += 1
-        return lit
+        return self.var_manager.fresh(prefix="mzn", namespace="fzn")
 
     def register_bool(self, name: str) -> int:
         """
@@ -24,7 +24,11 @@ class Booleanizer:
         if name in self.var_map:
             raise ValueError(f"Variable {name} already registered.")
         
-        lit = self._get_new_literal()
+        # Use declared variable ID from VarManager if allowed, or fresh?
+        # MiniZinc variables map 1:1 to SAT vars typically.
+        # We use declare() to ensure consistent naming if name allows.
+        lit = self.var_manager.declare(name)
+        
         info = {
             "type": "bool",
             "literal": lit,

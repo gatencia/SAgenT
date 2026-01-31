@@ -1,82 +1,100 @@
-# Agentic SAT Solver (LLM-SAT)
+# LLM-SAT: Agentic Constraint Solving
 
-A **ReAct-based Agent** that uses Large Language Models (LLMs) to reason about problems and a **SAT Solver** (`python-sat`) to rigorously solve them.
+LLM-SAT is a **ReAct-based Agentic Framework** that bridges the gap between high-level natural language reasoning and low-level SAT/Constraint solving. It uses Large Language Models (LLMs) to formulate problems and rigorous solvers (PySAT, MiniZinc) to solve them.
 
-## 🏗 System Architecture (Strict Phasing)
+---
 
-The agent now follows a strict **5-Phase Pipeline** to ensure robust problem formulation:
+## 🚀 How it Works: The 5-Phase Lifecycle
 
-1.  **OBSERVATION** (Understanding):
-    *   Agent extracts bounds, grid sizes, and rules.
-    *   Output: `UPDATE_PLAN` with rich observations.
-    *   **Goal**: Must satisfy observation count before advancing.
+The agent operates in a strictly phased environment, enforced by the **SATManager** "referee". This ensures the model is built incrementally and correctly.
 
-2.  **VARIABLES** (Search Space):
-    *   Agent maps observations to discrete Boolean/Integer variables.
-    *   Action: `DEFINE_VARIABLES`.
-    *   **Goal**: Must register variables in the engine.
+### 1. 🔍 OBSERVATION (Discovery)
+The agent analyzes the problem description to extract grid sizes, piece counts, blocked cells, and movement rules.
+- **Action**: `UPDATE_PLAN`
+- **Goal**: Populate `PLAN.md` with enough observations to advance.
 
-3.  **CONSTRAINTS** (Logic):
-    *   Agent applies high-level constraints (e.g., `at_most_k`, `alldifferent`) to variables.
-    *   Action: `ADD_MODEL_CONSTRAINTS`.
-    *   **Goal**: Must populate the model with logic.
+### 2. 🔢 VARIABLES (State Space)
+The agent defines a discrete search space by mapping observations to Boolean or Integer variables.
+- **Actions**: `DEFINE_VARIABLES`, `DEFINE_VARIABLE_PATTERN`
+- **Output**: A registered variable registry (e.g., `pos_robot1_t0_x0_y1`).
 
-4.  **IMPLEMENTATION** (Solving):
-    *   Agent calls `SOLVE`.
-    *   The backend (PySAT or MiniZinc) compiles and runs the solver.
+### 3. ⚖️ CONSTRAINTS (Logic Formulation)
+The agent translates mathematical or logical rules into high-level IR (Internal Representation) constraints.
+- **Actions**: `ADD_MODEL_CONSTRAINTS`, `ADD_PYTHON_CONSTRAINT_BLOCK`
+- **Kinds**: `exactly_one`, `at_most_k`, `implies`, `all_different`, etc.
+- **Verification**: `FUZZ_CONSTRAINTS` or `TEST_CONSTRAINT` can be used to "locally" verify logic before a full solve.
 
-5.  **DEBUGGING** (Refinement):
-    *   If solving fails, the agent enters this loop to critique and fix the model.
+### 4. ⚡ IMPLEMENTATION (JIT Compilation & Solving)
+The `SATManager` JIT-compiles the high-level model into low-level instructions (CNF, Pseudo-Boolean, or FlatZinc) and executes the backend solver.
+- **Action**: `SOLVE`
+- **Backends**: `pb` (Pseudo-Boolean), `cnf` (Raw SAT), `minizinc` (Constraint Programming).
 
-### Key Features
-*   **Deterministic Phase Advancement**: The Engine acts as a referee, explicitly telling the Agent when it has met the criteria to `ADVANCE_PHASE`.
-*   **Multi-Backend**: Support for `minizinc`, `pb` (Pseudo-Boolean), and `cnf`.
-*   **Iterative Planning**: `PLAN.md` is updated live, preserving "Current Code" visibility.
+### 5. 🛠 REFINEMENT (Debugging)
+If the solver returns `UNSAT` (unexpectedly) or fails validation, the agent analyzes the failure, critiques its model, and iterates.
+- **Action**: `REFINE_FROM_VALIDATION`, `REMOVE_MODEL_CONSTRAINTS`
 
-## Installation
+---
 
-1.  Clone the repository.
-2.  Install the core dependency:
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *(Requires `python-sat`)*
+## 🛠 Action Reference
 
-## Configuration
+| Action | Description |
+| :--- | :--- |
+| **`UPDATE_PLAN`** | Update `PLAN.md` with observations and goals. |
+| **`ADVANCE_PHASE`** | Transition to the next stage of the lifecycle. |
+| **`DEFINE_VARIABLES`** | Register individual Boolean variables. |
+| **`DEFINE_VARIABLE_PATTERN`**| Register variable families (e.g., `grid_{row}_{col}`). |
+| **`ADD_MODEL_CONSTRAINTS`** | Add high-level logic (ExactlyOne, AtMostK, etc.). |
+| **`ADD_PYTHON_CONSTRAINT_BLOCK`** | **Power User**: Execute Python code to generate complex constraints programmatically. |
+| **`FUZZ_CONSTRAINTS`** | Generate random test cases to verify the JIT compiler's output. |
+| **`TEST_CONSTRAINT`** | Verify a specific constraint against a manual truth-table entry. |
+| **`SOLVE`** | Compile and run the backend solver. |
+| **`DECODE_SOLUTION`** | Map raw boolean assignments back to domain variables. |
+| **`FINISH`** | Complete the task and provide the final solution. |
 
-Create a `.env` file in the root directory for your API keys:
+---
 
-```bash
-# .env
-GOOGLE_API_KEY=your_gemini_key_here
-OPENAI_API_KEY=your_openai_key_here (optional)
-```
+## 🏗 Project Structure
 
-## Usage
+- **`engine/`**: The core logic.
+    - `agent.py`: The ReAct loop and tool-calling coordinator.
+    - `sat_manager.py`: The "Referee" and JIT compiler entry point.
+    - `backends/`: Transformation logic for `pb`, `cnf`, and `minizinc`.
+    - `vars.py`: Global variable registry and ID mapper.
+- **`bench/`**: Benchmark harness.
+    - `run_bench.py`: CLI to run specific instances or families.
+    - `instances/`: JSON-encoded problems (GraphColoring, Pentomino, MRPP).
+    - `checkers/`: Domain-specific Python validators for solutions.
+- **`memory/`**: Workspace for intermediate solver files (e.g., `.fzn`, `.opb`).
 
-### 1. Run Benchmarks (Google Gemini)
-To run the agent on a specific Multi-Robot Path Planning instance:
+---
 
-```bash
-python3 bench/run_bench.py --provider google --id mrpp_6x6_3r_T8
-```
-*   **Note**: Includes automatic rate-limiting (4s delay) for the Free Tier.
+## 🔧 Installation & Setup
 
-### 2. Run Benchmarks (Local Ollama)
-Run completely offline with local models (requires [Ollama](https://ollama.com/) running):
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *Note: Requires `python-sat` and optionally `minizinc` installed on your PATH.*
 
-```bash
-python3 bench/run_bench.py --provider ollama --model llama3 --id mrpp_6x6_3r_T8
-```
+2. **Configure Environment**:
+   ```bash
+   cp .env.example .env
+   # Add your GOOGLE_API_KEY (for Gemini) or use Ollama for local runs.
+   ```
 
-## Project Structure
+3. **Run a Benchmark**:
+   ```bash
+   # Run a specific problem instance
+   python3 bench/run_bench.py --id poly_pentomino_10x6_hole_sat --provider google
+   ```
 
-*   `react_engine.py`: The core Agent, SAT Manager, and JIT Compiler.
-*   `bench/`: Benchmark harness.
-    *   `run_bench.py`: CLI Runner.
-    *   `instances/`: JSON problem files.
-    *   `checkers/`: Domain-specific solution validators.
-    *   `runs/`: Output logs.
+---
 
-## License
-MIT
+## 🛡 Verification & Fuzzing
+
+The repo includes a built-in **Fuzzing Engine** to prevent "modeling errors" from wasting solver time. When the agent adds a complex Python block, it can call `FUZZ_CONSTRAINTS` to generate 50+ random assignments, checking if the solver's result (SAT/UNSAT) matches the expected logic for that specific constraint subset.
+
+---
+
+> [!IMPORTANT]
+> **Deterministic Phasing**: The agent CANNOT skip to `SOLVE` without passing through `VARIABLES` and `CONSTRAINTS`. The `SATManager` will reject out-of-order actions.

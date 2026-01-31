@@ -1,0 +1,47 @@
+{
+    "id": "poly_pentomino_10x6_hole_sat",
+    "family": "polyomino_exact_cover",
+    "natural_language": "Tile a 10x6 board with all 12 free pentominoes exactly once. One cell is missing (a hole). Rotations and reflections are allowed. Decide satisfiable.",
+    "data": {
+        "grid_w": 10,
+        "grid_h": 6,
+        "semantics": {
+            "pieces": "free_pentominoes_12",
+            "use_each_piece_exactly_once": true,
+            "allow_rotations": true,
+            "allow_reflections": true,
+            "placements_must_be_disjoint": true,
+            "covered_cells_must_match": "all_nonblocked_cells"
+        },
+        "blocked": [
+            [
+                4,
+                2
+            ]
+        ],
+        "pieces": [
+            "F",
+            "I",
+            "L",
+            "P",
+            "N",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z"
+        ],
+        "symmetry_breaking": {
+            "anchor_piece": "X",
+            "anchor_cell": [
+                0,
+                0
+            ]
+        }
+    },
+    "expected": {
+        "sat": true
+    }
+}

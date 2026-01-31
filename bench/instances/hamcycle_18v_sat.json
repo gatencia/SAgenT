@@ -1,0 +1,125 @@
+{
+    "id": "hamcycle_18v_sat",
+    "family": "hamiltonian_cycle",
+    "natural_language": "Decide whether the given undirected graph on 18 vertices has a Hamiltonian cycle (a simple cycle visiting every vertex exactly once).",
+    "data": {
+        "semantics": {
+            "graph": "undirected",
+            "solution": "cycle visits all vertices exactly once"
+        },
+        "num_vertices": 18,
+        "edges": [
+            [
+                0,
+                1
+            ],
+            [
+                1,
+                2
+            ],
+            [
+                2,
+                3
+            ],
+            [
+                3,
+                4
+            ],
+            [
+                4,
+                5
+            ],
+            [
+                5,
+                6
+            ],
+            [
+                6,
+                7
+            ],
+            [
+                7,
+                8
+            ],
+            [
+                8,
+                9
+            ],
+            [
+                9,
+                10
+            ],
+            [
+                10,
+                11
+            ],
+            [
+                11,
+                12
+            ],
+            [
+                12,
+                13
+            ],
+            [
+                13,
+                14
+            ],
+            [
+                14,
+                15
+            ],
+            [
+                15,
+                16
+            ],
+            [
+                16,
+                17
+            ],
+            [
+                17,
+                0
+            ],
+            [
+                0,
+                9
+            ],
+            [
+                2,
+                11
+            ],
+            [
+                4,
+                13
+            ],
+            [
+                6,
+                15
+            ],
+            [
+                8,
+                17
+            ],
+            [
+                1,
+                10
+            ],
+            [
+                3,
+                12
+            ],
+            [
+                5,
+                14
+            ],
+            [
+                7,
+                16
+            ]
+        ]
+    },
+    "expected": {
+        "sat": true
+    }
+}

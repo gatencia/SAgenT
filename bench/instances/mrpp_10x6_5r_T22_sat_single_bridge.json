@@ -1,0 +1,125 @@
+{
+    "id": "mrpp_10x6_5r_T22_sat_single_bridge",
+    "family": "mrpp",
+    "natural_language": "MRPP on a 10x6 grid for 5 robots over 22 timesteps (T=22). The map has a single-cell bridge connecting left and right halves, forcing a bottleneck and requiring waiting. Movement is 4-neighbor+wait with vertex and swap collision avoidance.",
+    "data": {
+        "grid_w": 10,
+        "grid_h": 6,
+        "T": 22,
+        "semantics": {
+            "timesteps_indexed": "0..T-1",
+            "move_set": "4-neighbor+wait",
+            "collision_model": [
+                "no_vertex_collision",
+                "no_edge_swap"
+            ],
+            "goal_enforced_at": "t=T-1"
+        },
+        "robots": [
+            {
+                "name": "A",
+                "start": [
+                    1,
+                    1
+                ],
+                "goal": [
+                    8,
+                    4
+                ]
+            },
+            {
+                "name": "B",
+                "start": [
+                    1,
+                    4
+                ],
+                "goal": [
+                    8,
+                    1
+                ]
+            },
+            {
+                "name": "C",
+                "start": [
+                    2,
+                    2
+                ],
+                "goal": [
+                    7,
+                    3
+                ]
+            },
+            {
+                "name": "D",
+                "start": [
+                    8,
+                    2
+                ],
+                "goal": [
+                    1,
+                    3
+                ]
+            },
+            {
+                "name": "E",
+                "start": [
+                    8,
+                    3
+                ],
+                "goal": [
+                    2,
+                    1
+                ]
+            }
+        ],
+        "blocked": [
+            [
+                4,
+                0
+            ],
+            [
+                4,
+                1
+            ],
+            [
+                4,
+                2
+            ],
+            [
+                4,
+                3
+            ],
+            [
+                4,
+                4
+            ],
+            [
+                4,
+                5
+            ],
+            [
+                5,
+                0
+            ],
+            [
+                5,
+                1
+            ],
+            [
+                5,
+                2
+            ],
+            [
+                5,
+                4
+            ],
+            [
+                5,
+                5
+            ]
+        ]
+    },
+    "expected": {
+        "sat": true
+    }
+}

@@ -1,0 +1,42 @@
+{
+    "id": "partition_27nums_unsat_odd_sum",
+    "family": "number_partition",
+    "natural_language": "Decide if the numbers can be split into two subsets with equal sum. UNSAT because total sum is odd.",
+    "data": {
+        "semantics": {
+            "decision": "exists subset S such that sum(S) = total_sum/2"
+        },
+        "numbers": [
+            10,
+            14,
+            9,
+            7,
+            13,
+            11,
+            12,
+            15,
+            8,
+            6,
+            5,
+            16,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            33
+        ]
+    },
+    "expected": {
+        "sat": false
+    }
+}

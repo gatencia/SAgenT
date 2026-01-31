@@ -1,0 +1,43 @@
+{
+    "id": "partition_28nums_sat",
+    "family": "number_partition",
+    "natural_language": "Given 28 positive integers, decide if they can be partitioned into two subsets with equal sum.",
+    "data": {
+        "semantics": {
+            "decision": "exists subset S such that sum(S) = total_sum/2"
+        },
+        "numbers": [
+            49,
+            27,
+            38,
+            41,
+            15,
+            33,
+            22,
+            56,
+            19,
+            44,
+            29,
+            31,
+            17,
+            35,
+            26,
+            40,
+            24,
+            32,
+            21,
+            45,
+            18,
+            36,
+            28,
+            34,
+            20,
+            46,
+            16,
+            30
+        ]
+    },
+    "expected": {
+        "sat": true
+    }
+}

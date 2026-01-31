@@ -1,0 +1,95 @@
+{
+    "id": "mrpp_9x9_3r_T25_unsat_disconnected",
+    "family": "mrpp",
+    "natural_language": "MRPP on a 9x9 grid for 3 robots over 25 timesteps (T=25). Movement is 4-neighbor+wait with vertex and swap collision avoidance. One robot's goal lies in a different connected component due to a full blocked wall, so the instance is UNSAT.",
+    "data": {
+        "grid_w": 9,
+        "grid_h": 9,
+        "T": 25,
+        "semantics": {
+            "timesteps_indexed": "0..T-1",
+            "move_set": "4-neighbor+wait",
+            "collision_model": [
+                "no_vertex_collision",
+                "no_edge_swap"
+            ],
+            "goal_enforced_at": "t=T-1"
+        },
+        "robots": [
+            {
+                "name": "R1",
+                "start": [
+                    0,
+                    0
+                ],
+                "goal": [
+                    8,
+                    8
+                ]
+            },
+            {
+                "name": "R2",
+                "start": [
+                    8,
+                    0
+                ],
+                "goal": [
+                    0,
+                    8
+                ]
+            },
+            {
+                "name": "R3",
+                "start": [
+                    4,
+                    1
+                ],
+                "goal": [
+                    4,
+                    8
+                ]
+            }
+        ],
+        "blocked": [
+            [
+                0,
+                5
+            ],
+            [
+                1,
+                5
+            ],
+            [
+                2,
+                5
+            ],
+            [
+                3,
+                5
+            ],
+            [
+                4,
+                5
+            ],
+            [
+                5,
+                5
+            ],
+            [
+                6,
+                5
+            ],
+            [
+                7,
+                5
+            ],
+            [
+                8,
+                5
+            ]
+        ]
+    },
+    "expected": {
+        "sat": false
+    }
+}

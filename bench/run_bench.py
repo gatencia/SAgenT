@@ -28,6 +28,8 @@ if os.path.exists(env_path):
             if line and not line.startswith("#"):
                 try:
                     k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip("'").strip('"')
                     os.environ[k] = v
                 except: pass
 
@@ -84,7 +86,7 @@ class RateLimiter:
             time.sleep(self.min_interval - elapsed)
         self.last_call = time.time()
 
-def call_openai_api(prompt: str, api_key: str, model: str = "gpt-4-turbo-preview") -> str:
+def call_openai_api(prompt: str, api_key: str, model: str = "gpt-4-turbo-preview", insecure: bool = False) -> str:
     # Use urllib for zero dependencies
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
@@ -99,10 +101,15 @@ def call_openai_api(prompt: str, api_key: str, model: str = "gpt-4-turbo-preview
     }
     
     req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers)
-    try:
+    
+    # SSL Context
+    ctx = None
+    if insecure:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
+
+    try:
         with urllib.request.urlopen(req, context=ctx) as response:
             res_body = response.read()
             res_json = json.loads(res_body)
@@ -110,7 +117,7 @@ def call_openai_api(prompt: str, api_key: str, model: str = "gpt-4-turbo-preview
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"OpenAI API Error: {e.read().decode()}")
 
-def call_google_api(prompt: str, api_key: str, model: str = "gemini-2.0-flash") -> str:
+def call_google_api(prompt: str, api_key: str, model: str = "gemini-2.0-flash", insecure: bool = False) -> str:
     # Google Generative Language API
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     headers = {
@@ -124,14 +131,18 @@ def call_google_api(prompt: str, api_key: str, model: str = "gemini-2.0-flash") 
     
     req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers)
     
+    # SSL Context
+    ctx = None
+    if insecure:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    
     max_retries = 5
     base_wait = 2.0
     
     for attempt in range(max_retries):
         try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
             with urllib.request.urlopen(req, context=ctx) as response:
                 res_body = response.read()
                 res_json = json.loads(res_body)
@@ -247,7 +258,7 @@ def call_simulated_llm(prompt: str) -> str:
         # R0 starts at (0,0) needs (1,1)
         # R1 starts at (1,1) needs (0,0)
         # Simple swap around corners logic with tiny CNF
-        code = """
+        code = r"""
         % Variables: pos_R{r}_{x}_{y}_t{t}
         var bool: pos_R0_0_0_t0; var bool: pos_R0_0_1_t1; var bool: pos_R0_1_1_t2;
         var bool: pos_R1_1_1_t0; var bool: pos_R1_1_0_t1; var bool: pos_R1_0_0_t2;
@@ -329,12 +340,11 @@ Robot 1 Path: (1,1)->(1,0)->(0,0)
     
     return json.dumps({"action": "FINISH", "action_input": {}})
 
-def make_llm(provider: str, api_key: str = None, model: str = None) -> Callable[[str], str]:
+def make_llm(provider: str, api_key: str = None, model: str = None, insecure: bool = False) -> Callable[[str], str]:
     if provider == "openai":
-        if not api_key:
-            raise ValueError("API Key required for openai provider")
+        if not api_key: raise ValueError("API Key required for openai provider")
         m = model if model else "gpt-4-turbo-preview"
-        return lambda p: call_openai_api(p, api_key, m)
+        return lambda p: call_openai_api(p, api_key, m, insecure=insecure)
     elif provider == "google":
         key = api_key or os.environ.get("GOOGLE_API_KEY")
         if not key:
@@ -344,7 +354,7 @@ def make_llm(provider: str, api_key: str = None, model: str = None) -> Callable[
         limiter = RateLimiter(min_interval=4.0)
         def limited_call(p):
             limiter.wait()
-            return call_google_api(p, key, m)
+            return call_google_api(p, key, m, insecure=insecure)
         return limited_call
     elif provider == "ollama":
         m = model if model else "llama3"
@@ -397,7 +407,7 @@ def run_benchmark(args):
 
         # 3. Initialize Agent
         try:
-            llm = make_llm(args.provider, args.api_key, args.model)
+            llm = make_llm(args.provider, args.api_key, args.model, insecure=args.insecure)
             agent = ReActAgent(llm_callable=llm, max_steps=args.max_steps, ir_backend=args.IR)
         except Exception as e:
             print(f"Error initializing agent: {e}")
@@ -418,13 +428,28 @@ def run_benchmark(args):
         
         # 5. Check Solution
         checker_ok = False
-        checker_errors = ["Checker not found"]
-        if checker_fn:
-            if state.solution:
+        checker_errors = []
+        expected_sat = instance.get("expected", {}).get("sat", True)
+        agent_sat_status = getattr(state.sat_result, "status", None) if state.sat_result else None
+        
+        if expected_sat:
+            # Case 1: Expected SAT
+            if state.solution and checker_fn:
                 checker_ok, checker_errors = checker_fn(state.solution, instance)
+            elif not state.solution:
+                checker_ok = False
+                checker_errors = ["Expected SAT but got no solution in state.solution"]
+            else:
+                checker_ok = True # No checker, but solution exists
+        else:
+            # Case 2: Expected UNSAT
+            from engine.solution.types import SatStatus
+            if agent_sat_status == SatStatus.UNSAT:
+                checker_ok = True
+                checker_errors = ["Correctly identified UNSAT."]
             else:
                 checker_ok = False
-                checker_errors = ["No solution in state.solution"]
+                checker_errors = [f"Expected UNSAT but agent result was {agent_sat_status}"]
         
         # 6. Log Results
         run_data = {
@@ -468,6 +493,7 @@ if __name__ == "__main__":
     parser.add_argument("--api_key", type=str, help="API Key for Provider")
     parser.add_argument("--model", type=str, help="Model name (e.g. gemini-1.5-pro-latest)")
     parser.add_argument("--IR", type=str, default="pb", help="Intermediate Representation Backend (pb, minizinc, etc)")
+    parser.add_argument("--insecure", action="store_true", help="Bypass SSL certificate verification (macOS workaround)")
     
     args = parser.parse_args()
     run_benchmark(args)

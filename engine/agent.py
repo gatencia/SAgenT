@@ -109,6 +109,7 @@ class ReActAgent:
     def _execute(self, state: AgentState, action: ActionType, arg: Any) -> str:
         try:
             if action == ActionType.DEFINE_VARIABLES: return self.sat.define_variables(state, arg)
+            elif action == ActionType.DEFINE_VARIABLE_PATTERN: return self.sat.define_variable_pattern(state, arg)
             elif action == ActionType.UPDATE_PLAN: return self.sat.update_plan(state, arg)
             elif action == ActionType.ADVANCE_PHASE: return self.sat.advance_phase(state, arg)
             elif action == ActionType.REFINE_FROM_VALIDATION: return self.sat.refine_from_validation(state, arg.get("errors", []))
@@ -119,6 +120,7 @@ class ReActAgent:
             elif action == ActionType.UPDATE_MODEL_FILE: return self.sat.update_model_file(state, arg)
             elif action == ActionType.READ_MODEL_FILE: return self.sat.read_model_file(state)
             elif action == ActionType.ADD_MODEL_CONSTRAINTS: return self.sat.add_model_constraints(state, arg)
+            elif action == ActionType.ADD_PYTHON_CONSTRAINT_BLOCK: return self.sat.add_python_constraint_block(state, arg)
             elif action == ActionType.REMOVE_MODEL_CONSTRAINTS: return self.sat.remove_model_constraints(state, arg)
             elif action == ActionType.LIST_IR_SCHEMA: return self.sat.get_schema(state)
             elif action == ActionType.SOLVE: return self.sat.solve(state)
@@ -263,13 +265,22 @@ class ReActAgent:
         # Constraints
         if state.model_constraints:
             prompt += f"\nREGISTERED CONSTRAINTS ({len(state.model_constraints)}):\n"
-            for c in state.model_constraints:
-                 # Telemetry Hint
-                 cost = ""
-                 if state.compile_report and c.id in state.compile_report.get("clauses_by_constraint_id", {}):
-                     n_cls = state.compile_report["clauses_by_constraint_id"][c.id]
-                     if n_cls > 100: cost = f" [HEAVY: {n_cls} clauses]"
-                 prompt += f"- {c.id} | {c.kind} | {json.dumps(c.parameters)}{cost}\n"
+            if len(state.model_constraints) > 50:
+                # Summarize by Kind
+                counts = {}
+                for c in state.model_constraints:
+                    counts[c.kind] = counts.get(c.kind, 0) + 1
+                prompt += "Too many constraints to list individually. Summary by Type:\n"
+                for k, v in counts.items():
+                    prompt += f"- {k}: {v}\n"
+            else:
+                for c in state.model_constraints:
+                    # Telemetry Hint
+                    cost = ""
+                    if state.compile_report and c.id in state.compile_report.get("clauses_by_constraint_id", {}):
+                        n_cls = state.compile_report["clauses_by_constraint_id"][c.id]
+                        if n_cls > 100: cost = f" [HEAVY: {n_cls} clauses]"
+                    prompt += f"- {c.id} | {c.kind} | {json.dumps(c.parameters)}{cost}\n"
         else:
             prompt += "(None)\n"
         

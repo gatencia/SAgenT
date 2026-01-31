@@ -1,0 +1,67 @@
+{
+    "id": "slitherlink_6x6_sat_single_loop",
+    "family": "slitherlink",
+    "natural_language": "Solve a 6x6 Slitherlink. Select edges to form a single simple loop. Each numbered cell gives how many of its boundary edges are selected. Blank cells are unconstrained.",
+    "data": {
+        "grid_w": 6,
+        "grid_h": 6,
+        "semantics": {
+            "loop": "single_cycle",
+            "vertex_degree": "each vertex has degree 0 or 2",
+            "cell_constraint": "number equals selected incident edges (0..3); null means unconstrained"
+        },
+        "clues": [
+            [
+                null,
+                2,
+                null,
+                3,
+                null,
+                null
+            ],
+            [
+                2,
+                null,
+                3,
+                null,
+                2,
+                null
+            ],
+            [
+                null,
+                3,
+                null,
+                null,
+                null,
+                2
+            ],
+            [
+                3,
+                null,
+                null,
+                2,
+                null,
+                null
+            ],
+            [
+                null,
+                2,
+                null,
+                null,
+                3,
+                null
+            ],
+            [
+                null,
+                null,
+                2,
+                null,
+                2,
+                null
+            ]
+        ]
+    },
+    "expected": {
+        "sat": true
+    }
+}

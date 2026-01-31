@@ -6,13 +6,18 @@ from typing import List, Dict, Any, Optional
 
 from engine.state import AgentState, ModelingConstraint, AgentPhase
 from engine.backends.registry import IRBackendRegistry
-
+from engine.compilation.artifact import CompilationArtifact
+from engine.vars import VarManager
 
 # PySAT imports
 try:
     from pysat.solvers import Solver
 except ImportError:
     Solver = Any
+
+from engine.debug_harness import DebugHarness
+from engine.solution.types import SatResult, SatStatus, DomainSolution
+import re
 
 # ANSI Colors
 BLUE = "\033[94m"
@@ -120,6 +125,8 @@ class SATManager:
         """Helper to compile a subset of constraints without modifying state."""
         # Deep isolation
         temp_state = copy.copy(state)
+        # Deep copy vars to prevent pollution
+        temp_state.var_manager = copy.deepcopy(state.var_manager)
         temp_state.cnf_clauses = []
         
         # Re-compute watermark to ensure no collision with existing CNF vars if any
@@ -161,7 +168,7 @@ class SATManager:
 
     def fuzz_constraints(self, state: AgentState, payload: Dict[str, Any]) -> str:
         c_ids = payload.get("constraint_ids", [])
-        num_tests = payload.get("num_tests", 10)
+        num_tests = payload.get("num_tests", 50)
         mode = payload.get("mode", "both")
         
         results = {"tested": 0, "total_tests": 0, "failures": 0, "failure_examples": []}
@@ -337,23 +344,43 @@ class SATManager:
             
             # Execute
             fail_rec = []
-            for assump, expected, meta in targets:
-                outcome = self.solve_cnf_under_assumptions(cnf, assump, state)
-                if outcome != expected:
-                    results["failures"] += 1
-                    rec = {
-                        "id": cid, 
-                        "kind": constr.kind, 
-                        "backend": state.active_ir_backend,
-                        "assumed": assump, 
-                        "expected": expected, 
-                        "got": outcome,
-                        "debug": meta
-                    }
-                    if len(results["failure_examples"]) < 5: results["failure_examples"].append(rec)
-                    fail_rec.append(rec)
-                    # Limit failure examples per constraint in log to 3
-                    if len(fail_rec) >= 3: break
+            if targets:
+                print(f"fuzzing using {len(targets)} generated test cases:")
+                solver = Solver(name=self.solver_name, bootstrap_with=cnf)
+                try:
+                    for assump, expected, meta in targets:
+                        # Map to IDs
+                        ids = []
+                        for a in assump:
+                            is_neg = str(a).startswith('-') or str(a).startswith('~')
+                            name = str(a).lstrip('-~')
+                            var_id = state.sat_variables.get(name)
+                            if var_id:
+                                ids.append(-var_id if is_neg else var_id)
+                        
+                        status = solver.solve(assumptions=ids)
+                        outcome = "SAT" if status else "UNSAT"
+                        
+                        if outcome == expected:
+                            print(".", end="", flush=True)
+                        else:
+                            print("F", end="", flush=True)
+                            results["failures"] += 1
+                            rec = {
+                                "id": cid, 
+                                "kind": constr.kind, 
+                                "backend": state.active_ir_backend,
+                                "assumed": assump, 
+                                "expected": expected, 
+                                "got": outcome,
+                                "debug": meta
+                            }
+                            if len(results["failure_examples"]) < 10: 
+                                results["failure_examples"].append(rec)
+                            fail_rec.append(rec)
+                finally:
+                    solver.delete()
+                print("") # Close line
             
             # Log
             log_entry = {
@@ -461,7 +488,10 @@ class SATManager:
             if state.plan.get("verification") != "CONFIRMED":
                 return "Error: Cannot advance from PLANNING. You must set 'verification': 'CONFIRMED' in your plan first."
             state.current_phase = AgentPhase.IMPLEMENTATION
-            return "Phase advanced to IMPLEMENTATION. Goal: Write MiniZinc code using 'UPDATE_MODEL_FILE' and then 'SOLVE'."
+            if "minizinc" in state.active_ir_backend.lower():
+                return "Phase advanced to IMPLEMENTATION. Goal: Write MiniZinc code using 'UPDATE_MODEL_FILE' and then 'SOLVE'."
+            else:
+                return "Phase advanced to IMPLEMENTATION. Goal: Use 'DEFINE_VARIABLE_PATTERN' and 'ADD_PYTHON_CONSTRAINT_BLOCK' to build model, then 'SOLVE'."
 
         elif current == AgentPhase.IMPLEMENTATION:
             # If we are here, we might be stuck or failed solving. Move to DEBUGGING.
@@ -490,6 +520,10 @@ class SATManager:
             try:
                 backend = self.registry.get(state.active_ir_backend)
                 code_view = backend.generate_code(state)
+                # Truncate if too long (e.g. > 100 lines)
+                lines = code_view.splitlines()
+                if len(lines) > 110:
+                    code_view = "\n".join(lines[:100]) + f"\n... [{len(lines)-100} more lines truncated] ..."
                 content += f"## Generated Code (Backend: {backend.name})\n```text\n{code_view}\n```\n"
             except Exception as e:
                 content += f"## Generated Code\nError generating code view: {e}\n"
@@ -517,12 +551,143 @@ class SATManager:
             if name not in state.sat_variables:
                 state.sat_variables[name] = state.next_var_id
                 state.next_var_id += 1
+                state.var_manager.declare(name)
                 added.append(name)
         
         if not added:
             return "No new variables registered. You have likely defined them all. Next Goal: Use 'ADD_MODEL_CONSTRAINTS' to forbid collisions or set assignments."
             
         return f"Registered {len(added)} variables: {added}"
+
+    def define_variable_pattern(self, state: AgentState, args: Dict[str, Any]) -> str:
+        """
+        Generates variables based on a pattern and ranges.
+        Args:
+            pattern: f-string style pattern, e.g. "pos_{r}_{t}"
+            ranges: Dict of range config, e.g. {"r": 5, "t": [0, 1, 2]} or {"r": 5} (implies 0..4)
+        """
+        if not state.plan: return "Error: You MUST call 'UPDATE_PLAN' before defining variables."
+        
+        pattern = args.get("pattern")
+        ranges_cfg = args.get("ranges")
+        if not pattern or not ranges_cfg:
+             return "Error: Must provide 'pattern' (str) and 'ranges' (dict)."
+        
+        import itertools
+        
+        keys = sorted(ranges_cfg.keys())
+        iterables = []
+        for k in keys:
+             val = ranges_cfg[k]
+             if isinstance(val, int):
+                 iterables.append(range(val))
+             elif isinstance(val, list):
+                 iterables.append(val)
+             else:
+                 return f"Error: Range for '{k}' must be int (count) or list (explicit values)."
+        
+        added = []
+        # Cartesian Product
+        for values in itertools.product(*iterables):
+             ctx = dict(zip(keys, values))
+             try:
+                 name = pattern.format(**ctx)
+             except KeyError as e:
+                 return f"Error: Pattern key {e} not found in ranges."
+             
+             if name not in state.sat_variables:
+                 state.sat_variables[name] = state.next_var_id
+                 state.next_var_id += 1
+                 state.var_manager.declare(name)
+                 added.append(name)
+        
+        return f"Generated {len(added)} variables from pattern '{pattern}'. Examples: {added[:5]}..."
+
+    
+    def add_python_constraint_block(self, state: AgentState, code: str) -> str:
+        """
+        Executes a block of Python code to generate constraints.
+        Exposes:
+        - clause(lits) / add_clause(lits)
+        - at_most_k(vars, k) / add_at_most_k(vars, k)
+        - exactly_one(vars) / add_exactly_one(vars)
+        - implies(a, b) / add_implies(a, b)
+        - linear_leq(terms, rhs) / add_linear_leq(terms, rhs)
+        - variables: dict (read-only copy of state.sat_variables)
+        """
+        if not state.plan: return "Error: Plan required."
+        
+        # Sync legacy sat_variables to var_manager just in case
+        for k in state.sat_variables:
+            state.var_manager.declare(k)
+        
+        # 1. Setup Scope
+        added_count = 0
+        errors = []
+        
+        def _add(kind, params):
+            nonlocal added_count
+            # Validate vars exist
+            for key, val in params.items():
+                if key == "vars" or key == "literals":
+                    for v in val:
+                        s_v = str(v).lstrip("-~")
+                        if s_v not in state.sat_variables:
+                            errors.append(f"Variable '{s_v}' not defined.")
+                            return
+                if key == "terms":
+                     for t in val:
+                         s_v = str(t['var']).lstrip("-~")
+                         if s_v not in state.sat_variables:
+                             errors.append(f"Variable '{s_v}' not defined.")
+                             return
+
+            c_id = f"c_{uuid.uuid4().hex[:8]}"
+            c = ModelingConstraint(id=c_id, kind=kind, parameters=params, ir_backend=state.active_ir_backend)
+            state.model_constraints.append(c)
+            added_count += 1
+            return c
+
+        # Helper Functions exposed to the Agent
+        def clause(lits): return _add("clause", {"literals": lits})
+        def at_most_k(vars, k): return _add("at_most_k", {"vars": vars, "k": k})
+        def exactly_one(vars): return _add("exactly_one", {"vars": vars})
+        def exactly_k(vars, k): return _add("exactly_k", {"vars": vars, "k": k})
+        def implies(a, b): return _add("implies", {"a": a, "b": b})
+        def linear_leq(terms, rhs): return _add("linear_leq", {"terms": terms, "rhs": rhs})
+        def linear_eq(terms, rhs): return _add("linear_eq", {"terms": terms, "rhs": rhs})
+        
+        # Context
+        scope = {
+            "clause": clause, "add_clause": clause,
+            "at_most_k": at_most_k, "add_at_most_k": at_most_k,
+            "exactly_one": exactly_one, "add_exactly_one": exactly_one,
+            "exactly_k": exactly_k, "add_exactly_k": exactly_k,
+            "implies": implies, "add_implies": implies,
+            "linear_leq": linear_leq, "add_linear_leq": linear_leq,
+            "linear_eq": linear_eq, "add_linear_eq": linear_eq,
+            "variables": state.sat_variables.copy(),
+            "range": range,
+            "list": list,
+            "dict": dict,
+            "print": print,
+            # Robustness: ignore accidental tool-calls inside the block
+            "ADD_MODEL_CONSTRAINTS": lambda x: None,
+            "ADD_PYTHON_CONSTRAINT_BLOCK": lambda x: None,
+            "add_constraints": lambda x: [_add(c["kind"], c["parameters"]) if isinstance(c, dict) else None for c in (x if isinstance(x, list) else [x])],
+            "ADD_CONSTRAINTS": lambda x: [_add(c["kind"], c["parameters"]) if isinstance(c, dict) else None for c in (x if isinstance(x, list) else [x])]
+        }
+        
+        # 2. Execute
+        try:
+            exec(code, scope)
+        except Exception as e:
+            return f"Error executing constraint block: {e}"
+            
+        if errors:
+            return f"Execution run but encountered {len(errors)} variable errors. First error: {errors[0]}"
+            
+        return f"Successfully executed block. Added {added_count} constraints."
 
     def add_model_constraints(self, state: AgentState, constraints_data: List[Dict[str, Any]]) -> str:
         if not state.plan: return "Error: You MUST call 'CREATE_PLAN' before adding constraints."
@@ -672,87 +837,229 @@ class SATManager:
         return f"Refining model based on {len(errors)} validation errors. Please REMOVE or ADD constraints."
 
     def solve(self, state: AgentState) -> str:
-        # 1. Auto-Fuzzing (Verification Step)
-        # Even before full compilation, we can verify specific constraints if they exist in object form.
-        # But if we are in File-Centric mode (MiniZinc), fuzzing requires parsing FZN which happens inside backend.solve.
-        # So instead, we let the backend solve, but if the backend SUPPORTS fuzzing hook, we use it.
-        # OR: We implement a generic Fuzzer inside the DebugHarness that runs automatically.
-        
-        # Current Fuzzing hook (lines 162+) works on `model_constraints` (object list).
-        # If we are using pure MiniZinc file, `model_constraints` is likely empty.
-        # However, `fuzz_constraints` compiles a subset.
-        
-        # Let's trust the DebugHarness inside backend.solve to handle the main logic,
-        # BUT we wrap the call to log metrics.
-        
         import time
         start_time = time.time()
         
-        print(f"{DIM}SATManager: Submitting Model to Backend ({state.active_ir_backend})...{RESET}")
+        print(f"{DIM}SATManager: Solving with Backend ({state.active_ir_backend})...{RESET}")
         
-        backend = self.registry.get(state.active_ir_backend)
+        result = SatResult(status=SatStatus.UNKNOWN)
+        
         try:
-             if hasattr(backend, "solve") and callable(backend.solve):
-                 msg = backend.solve(state)
-                 duration = (time.time() - start_time) * 1000
-                 
-                 # Analyze Result for Logging
-                 if "Solution Found" in msg:
-                     print(f"{GREEN}SATManager: Model Accepted (Time: {duration:.1f}ms){RESET}")
-                     if "metrics" in state.serialize(): # Check if metrics exists
-                         state.metrics["iterations_to_valid"] += 1 
-                         # (Logic to track attempts needed, but simple counter works for now)
-                     return "Solution Found (Stored in state). Validation Pending."
-                 
-                 elif "Compilation Failed" in msg or "Syntax" in msg:
-                     print(f"{RED}SATManager: Model Rejected (Syntax Error){RESET}")
-                     if "metrics" in state.serialize(): state.metrics["syntax_errors"] += 1
-                     return msg
-                     
-                 else:
-                     # Logical Failure or UNSAT
-                     print(f"{YELLOW}SATManager: Model Rejected (Logic/UNSAT){RESET}")
-                     if "metrics" in state.serialize(): state.metrics["rejections"] += 1
-                     # If backend uses Harness, it effectively "fuzzed" (found core).
-                     if "Conflict Core" in msg:
-                         if "metrics" in state.serialize(): state.metrics["unsat_cores_trigger"] += 1
-                     return msg
+            # 1. Sync Legacy variables (safety net)
+            for name in state.sat_variables:
+                state.var_manager.declare(name)
+
+            # 2. Compile ONCE
+            backend = self.registry.get(state.active_ir_backend)
+            print(f"{DIM}SATManager: Compiling to Artifact...{RESET}")
+            
+            artifact = backend.compile(state)
+            state.compilation_artifact = artifact
+            state.cnf_clauses = artifact.clauses # Legacy compat
+            
+            # 3. Setup Harness
+            # Safety Filter: PySAT crashes on 0 literals. Preserve indices for provenance.
+            safe_clauses = []
+            for c_idx, c in enumerate(artifact.clauses):
+                if 0 in c:
+                    # Find which constraint this belongs to
+                    source_cid = "Unknown"
+                    for cid, indices in artifact.constraint_to_clause_ids.items():
+                         if c_idx in indices:
+                             source_cid = cid
+                             break
+                    print(f"{YELLOW}Warning: Clause {c_idx} (from {source_cid}) contains literal 0, pruning: {c}{RESET}")
+                    cleaned = [l for l in c if l != 0]
+                    if not cleaned:
+                         print(f"{RED}Error: Clause {c_idx} became EMPTY after pruning 0 literals!{RESET}")
+                    safe_clauses.append(cleaned)
+                else:
+                    safe_clauses.append(c)
+
+            print(f"{DIM}SATManager: Initializing DebugHarness...{RESET}")
+            harness = DebugHarness(solver_name=self.solver_name)
+            # We use reset_instrumentation instead of load_problem if we intend to use groups
+            harness.reset_instrumentation(state.var_manager.max_id)
+            
+            # Register groups from Artifact
+            if artifact.constraint_to_clause_ids:
+                for cid, indices in artifact.constraint_to_clause_ids.items():
+                    if not indices: continue
+                    # These indices refer to the original artifact.clauses, so we need to map them
+                    # to the safe_clauses if any were filtered out.
+                    # For now, we assume the indices are still valid for the filtered list,
+                    # which implies that if a clause was filtered, its index is skipped.
+                    # A more robust solution would re-index, but this is simpler for now.
+                    # If a clause with 0 was filtered, its original index might not exist in safe_clauses.
+                    # Let's adjust to use the original clauses for group mapping, and the filtered for solving.
+                    # This means the group mapping might contain clauses that were filtered out.
+                    # A better approach would be to re-map indices after filtering.
+                    # For now, we'll pass the original clauses to add_group, and safe_clauses to the solver.
+                    c_clauses = [safe_clauses[i] for i in indices]
+                    harness.add_group(cid, c_clauses, {"id": cid})
+            else:
+                 harness.add_group("root", safe_clauses, {"id": "root"})
+            
+            # 4. Solve (Enable all groups)
+            all_sels = [g["selector"] for g in harness.groups.values()]
+            print(f"{DIM}SATManager: Solving with {len(all_sels)} enabled groups...{RESET}")
+            is_sat, model = harness.solve(assumptions=all_sels)
+            
+            result.time_taken = (time.time() - start_time) * 1000
+            
+            if is_sat:
+                print(f"{GREEN}SATManager: SAT! Decoding... (Time: {result.time_taken:.1f}ms){RESET}")
+                
+                result.status = SatStatus.SAT
+                assignment = {v: (v > 0) for v in model}
+                
+                # Decode Model Names
+                # Use artifact.var_map names
+                decoded_model = {}
+                for name, vid in artifact.var_map.items():
+                    if "::" in name: continue 
+                    # Handle boolean logic
+                    if vid in assignment:
+                        decoded_model[name] = assignment[vid]
+                    elif -vid in assignment:
+                        decoded_model[name] = assignment[-vid]
+                    else:
+                        decoded_model[name] = False
+                
+                result.model = decoded_model
+                state.sat_result = result
+                
+                # Auto-Decode Domain Solution
+                self.decode_solution(state)
+                
+                if "metrics" in state.serialize(): state.metrics["iterations_to_valid"] += 1
+                return f"Solution Found (SAT). Time: {result.time_taken:.1f}ms. Domain decoding applied."
+            
+            else:
+                print(f"{YELLOW}SATManager: UNSAT. Diagnosing...{RESET}")
+                result.status = SatStatus.UNSAT
+                if "metrics" in state.serialize(): 
+                    state.metrics["rejections"] += 1
+                    state.metrics["unsat_cores_trigger"] += 1
+                
+                report = harness.diagnose()
+                
+                # Store conflict info in result
+                result.unsat_core = report.get("minimized_core", [])
+                result.conflict_info = report.get("conflict_info", {})
+                
+                state.sat_result = result
+                
+                # Simplify report for Agent
+                msg = "Constraint Satisfaction Failed (UNSAT).\n"
+                if result.unsat_core:
+                    msg += "Conflict detected between:\n"
+                    for g in result.unsat_core[:5]:
+                        info = result.conflict_info.get(g, {})
+                        kind = info.get("kind", "unknown")
+                        label = f"Group '{g}' ({kind})"
+                        if "raw" in info:
+                             label += f": {info['raw'][:50]}..."
+                        msg += f"- {label}\n"
+                    if len(result.unsat_core) > 5:
+                        msg += f"... and {len(result.unsat_core)-5} more."
+                return msg
+
         except Exception as e:
             if "metrics" in state.serialize(): state.metrics["rejections"] += 1
-            return f"Backend Error: {e}"
-
-        # Default PySAT Logic (Legacy)
-        # ... legacy code ...
-
-        # Default PySAT Logic (for 'pb', 'cnf')
-        try:
-            print(f"{DIM}SATManager: Compiling to CNF...{RESET}")
-            self._compile(state)
-        except Exception as e:
-            return f"Compilation Failed: {e}"
-        
-        if not state.cnf_clauses: return "No Constraints compiled."
-
-        try:
-            print(f"{DIM}SATManager: Solving CNF ({len(state.cnf_clauses)} clauses)...{RESET}")
-            s = Solver(name=self.solver_name, bootstrap_with=state.cnf_clauses)
-            if s.solve():
-                print(f"{GREEN}SATManager: SAT! Decoding model...{RESET}")
-                m = s.get_model()
-                assignment = {v: (v > 0) for v in m}
-                result = {k: assignment[v] for k, v in state.sat_variables.items() if v in assignment}
-                state.solution = result
-                s.delete()
-                # Important: Return generic message. Validation happens in Agent Loop.
-                return "Solution Found (Stored in state). Validation Pending."
-            s.delete()
-            return "Unexpected UNSAT"
-        except Exception as e: return f"Error: {e}"
+            import traceback
+            traceback.print_exc()
+            return f"Pipeline Error: {e}"
 
     def decode_solution(self, state: AgentState) -> str:
-        # Legacy stub
-        if state.solution: return "Solution available in state."
-        return "No solution."
+        if not state.sat_result: return "No execution result available."
+        
+        res = state.sat_result
+        if res.status != SatStatus.SAT or not res.model:
+            state.domain_solution = DomainSolution(is_valid=False)
+            return "Result is Not SAT."
+            
+        print(f"{DIM}SATManager: MRPP/Domain Decoding...{RESET}")
+        
+        # Domain Decoding
+        ds = DomainSolution(is_valid=True, variables=res.model, raw_result=res)
+        
+        # MRPP Heuristic
+        try:
+            paths = self._decode_mrpp(res.model)
+            if paths:
+                ds.paths = paths
+                print(f"{GREEN}SATManager: Decoded paths for {len(paths)} agents.{RESET}")
+        except Exception as e:
+            print(f"{YELLOW}SATManager: MRPP Decode Warning: {e}{RESET}")
+            
+        state.domain_solution = ds
+        # Prefer structured domain solution for the checker, fallback to raw model
+        state.solution = {"paths": ds.paths} if ds.paths else res.model
+        
+        summary = f"Solution Valid. Variables: {len(res.model)}.\n"
+        if ds.paths:
+             summary += "Decoded Paths:\n"
+             for r, p in ds.paths.items():
+                 summary += f"  Agent {r}: {p}\n"
+        return summary
+
+    def _decode_mrpp(self, model: Dict[str, bool]) -> Dict[str, List[Any]]:
+        """
+        Heuristic decoder for patterns:
+        1. pos_{r}_{x}_{y}_{t} (Boolean Grid)
+        2. pos_{r}_{loc}_{t} (Graph Node)
+        """
+        # Regex
+        p_grid = re.compile(r"pos_(\d+)_(\d+)_(\d+)_(\d+)")
+        p_node = re.compile(r"pos_(\d+)_([a-zA-Z0-9]+)_(\d+)")
+        
+        # Store as (t, x, y) or (t, loc)
+        raw_paths = {} # r -> list of tuples
+        
+        # Loosen regex: allow any separator, handle R0 vs 0
+        p_grid = re.compile(r"pos[._](\d+)[._](\d+)[._](\d+)[._](\d+)")
+        p_node = re.compile(r"pos[._](\d+)[._]([a-zA-Z0-9]+)[._](\d+)")
+
+        grid_count = 0
+        node_count = 0
+        true_vars = [k for k, v in model.items() if v]
+
+        for var in true_vars:
+            # Check Grid
+            m = p_grid.search(var) 
+            if m:
+                grid_count += 1
+                r, x, y, t = map(int, m.groups())
+                if r not in raw_paths: raw_paths[r] = []
+                raw_paths[r].append((t, x, y))
+                continue
+                
+            # Check Node
+            m = p_node.search(var)
+            if m:
+                node_count += 1
+                r, loc, t = m.groups()
+                t = int(t)
+                if r not in raw_paths: raw_paths[r] = []
+                raw_paths[r].append((t, loc))
+        
+        if grid_count or node_count:
+             print(f"{DIM}SATManager: Decoded {grid_count} grid points and {node_count} node points.{RESET}")
+        else:
+             print(f"{YELLOW}SATManager: No MRPP patterns matched in model.{RESET}")
+             print(f"{YELLOW}Sample True Variables: {true_vars[:10]}{RESET}")
+            
+        # Sort and Format
+        final_paths = {}
+        for r, bumps in raw_paths.items():
+            # Sort by T
+            bumps.sort(key=lambda x: x[0])
+            # Strip T from tuple? Or keep?
+            # Keeping T is safer to detect gaps
+            final_paths[str(r)] = bumps
+            
+        return final_paths
 
     def refine_model(self, state: AgentState, feedback: str) -> str:
         return "Model Refinement Logged"

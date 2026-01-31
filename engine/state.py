@@ -2,6 +2,9 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
+from engine.vars import VarManager
+from engine.compilation.artifact import CompilationArtifact
+from engine.solution.types import SatResult, DomainSolution
 
 @dataclasses.dataclass
 class ModelingConstraint:
@@ -43,8 +46,16 @@ class AgentState:
     current_phase: AgentPhase = AgentPhase.PLANNING # Strict Phase Control
 
     # Execution
+    var_manager: VarManager = field(default_factory=VarManager)
+    compilation_artifact: Optional[CompilationArtifact] = None
+    
     cnf_clauses: List[List[int]] = field(default_factory=list)
     solution: Optional[Dict[str, bool]] = None
+    
+    # Rich Decode
+    sat_result: Optional[SatResult] = None
+    domain_solution: Optional[DomainSolution] = None # Decoded objects (paths, grid, etc)
+
     validator_results: List[Dict[str, Any]] = field(default_factory=list)
     
     fuzz_log: List[Dict[str, Any]] = field(default_factory=list)

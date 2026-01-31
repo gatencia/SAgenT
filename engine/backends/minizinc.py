@@ -1,6 +1,17 @@
-from typing import List, Dict, Any
+import subprocess
+import os
+import uuid
+import json
+import re
+import hashlib
+import pickle
+from typing import List, Dict, Any, Optional
+
 from engine.backends.base import IRBackend
 from engine.state import AgentState, ModelingConstraint
+from tools.mzn_to_fzn import compile_to_flatzinc, parse_flatzinc
+from engine.booleanizer import Booleanizer
+from engine.compilation.artifact import CompilationArtifact
 
 # PySAT imports
 try:
@@ -10,24 +21,12 @@ except ImportError:
     CardEnc = Any
     PBEnc = Any
 
-import subprocess
-import os
-import uuid
-from typing import List, Dict, Any
-
-from engine.backends.base import IRBackend
-from engine.state import AgentState, ModelingConstraint
-from tools.mzn_to_fzn import compile_to_flatzinc, parse_flatzinc
-from engine.booleanizer import Booleanizer
-from engine.booleanizer import Booleanizer
-from pysat.solvers import Solver
-from engine.debug_harness import DebugHarness
-import json
-
 class MiniZincCoreBackend(IRBackend):
     def __init__(self):
-        self.solver_id = "chuffed" # Used for FZN compilation compilation target if needed
+        self.solver_id = "chuffed" 
         self.booleanizer = Booleanizer()
+        self._cache_dir = "memory/cache/mzn"
+        os.makedirs(self._cache_dir, exist_ok=True)
 
     @property
     def name(self) -> str:
@@ -106,7 +105,8 @@ Constraint logic is handled by the solver's CP-SAT engine.
             
             if k == "clause":
                 lits = [get_mzn_ref(l) for l in p["literals"]]
-                mzn_lines.append(f"constraint {' \\/ '.join(lits)};")
+                sep = " \\/ "
+                mzn_lines.append(f"constraint {sep.join(lits)};")
             elif k == "implies":
                 mzn_lines.append(f"constraint {get_mzn_ref(p['a'])} -> {get_mzn_ref(p['b'])};")
             elif k == "exactly_one":
@@ -127,280 +127,170 @@ Constraint logic is handled by the solver's CP-SAT engine.
         mzn_lines.append("solve satisfy;")
         return "\n".join(mzn_lines)
 
-    def solve(self, state: AgentState) -> str:
+    def compile(self, state: AgentState) -> CompilationArtifact:
         """
-        Executes the MZN -> FZN -> CNF -> SAT pipeline with Debug Harness.
+        Compiles MZN model into CompilationArtifact via FZN translation.
+        Includes cross-run hashing cache.
         """
+        # 1. Generate/Locate MZN Code
         mzn_code = self.generate_code(state)
         
+        # 2. Cache Check
+        mzn_hash = hashlib.sha256(mzn_code.encode()).hexdigest()[:16]
+        cache_path = os.path.join(self._cache_dir, f"{mzn_hash}.pkl")
         
-        # 1. Write Code to File
-        # Check if we have an active file-based workflow
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "rb") as f:
+                    cached_artifact = pickle.load(f)
+                    print(f"MiniZincCoreBackend: Cache Hit ({mzn_hash})")
+                    return cached_artifact
+            except Exception as e:
+                print(f"MiniZincCoreBackend: Cache Load Failed: {e}")
+
+        f_mzn = "memory/model_temp.mzn" # Default fallback
+        os.makedirs("memory", exist_ok=True)
+        
         if state.model_file_path and os.path.exists(state.model_file_path):
-            f_mzn = state.model_file_path
-            # We skip 'generate_code' and use this file directly
+             f_mzn = state.model_file_path
         else:
-            # Fallback to generation
-            mzn_code = self.generate_code(state)
-            model_id = uuid.uuid4().hex[:8]
-            f_mzn = f"memory/model_{model_id}.mzn"
-            
-            try:
-                with open(f_mzn, "w") as f:
-                    f.write(mzn_code)
-            except Exception as e:
-                return f"Write Error: {e}"
-        
+             model_id = uuid.uuid4().hex[:8]
+             f_mzn = f"memory/model_{model_id}.mzn"
+             try:
+                 with open(f_mzn, "w") as f:
+                     f.write(mzn_code)
+             except Exception as e:
+                 raise RuntimeError(f"Write Error: {e}")
+
+        # 3. Compile to FlatZinc
         try:
-            # 2. Compile to FlatZinc
-                
-            # 2. Compile to FlatZinc
-            try:
-                fzn_content = compile_to_flatzinc(f_mzn)
-            except Exception as e:
-                return f"MiniZinc Compilation Failed (Syntax/Type Error):\n{e}"
-                
-            # 3. Parse and Translate to CNF
-            try:
-                vars_found, constrs_found = parse_flatzinc(fzn_content)
-                
-                local_booleanizer = Booleanizer()
-                harness = DebugHarness(solver_name='g3')
-                
-                # Register Vars
-                for v in vars_found:
-                    if v['type'] == 'bool':
-                        local_booleanizer.register_bool(v['name'])
-                    # Int support pending
-                
-                # Reset Harness with correct max_id
-                max_id = local_booleanizer.next_literal_id - 1
-                harness.reset_instrumentation(max_id)
-                
-                # Translate Constraints & Instrument
-                for c in constrs_found:
-                    # We only handle bool_clause for now
-                    if c['type'] == 'bool_clause':
-                        args_str = c['args']
-                        import re
-                        m = re.match(r"\[(.*)\],\s*\[(.*)\]", args_str)
-                        if m:
-                            pos_part = m.group(1).split(',') if m.group(1).strip() else []
-                            neg_part = m.group(2).split(',') if m.group(2).strip() else []
-                            clause = []
-                            for p in pos_part:
-                                if p.strip(): clause.append(local_booleanizer.get_bool_literal(p.strip()))
-                            for n in neg_part:
-                                if n.strip(): clause.append(-local_booleanizer.get_bool_literal(n.strip()))
-                            
-                            # Add Group
-                            # Group ID comes from mzn_to_fzn "group" field or fallback
-                            gid = c.get("group", f"c_{uuid.uuid4().hex[:4]}")
-                            harness.add_group(gid, [clause], {"raw": c["raw"], "type": c["type"]})
-                    
-                    elif c['type'] == 'bool_not':
-                        # bool_not(a, b) => b <-> ~a => (b \/ a) /\ (~b \/ ~a)
-                        args_part = c['args']
-                        # Simple split, might need regex if complex args
-                        parts = [x.strip() for x in args_part.split(',')]
-                        if len(parts) >= 2:
-                            a_name, b_name = parts[0], parts[1]
-                            try:
-                                lit_a = local_booleanizer.get_bool_literal(a_name)
-                                lit_b = local_booleanizer.get_bool_literal(b_name)
-                                
-                                # (b \/ a)
-                                c1 = [lit_b, lit_a]
-                                # (~b \/ ~a)
-                                c2 = [-lit_b, -lit_a]
-                                
-                                gid = c.get("group", f"c_{uuid.uuid4().hex[:4]}_not")
-                                harness.add_group(gid, [c1, c2], {"raw": c["raw"], "type": c["type"]})
-                            except ValueError as e:
-                                print(f"Warning: Skipping bool_not on unknown vars: {e}")
-
-                    elif c['type'] in ['int_lin_le', 'int_lin_le_reif', 'int_lin_eq', 'int_lin_eq_reif']:
-                        # int_lin_le(coeffs, vars, rhs) -> sum(c*v) <= rhs
-                        # Flattening often produces reified versions for complex logic
-                        is_reif = c['type'].endswith('_reif')
-                        # Args: [coeffs], [vars], rhs, (reif_var)
-                        args_str = c['args']
-                        
-                        # Basic parsing of [c,c], [v,v], k, r
-                        # This regex is brittle for nested lists, but standard FZN is flat.
-                        import re
-                        # precise match for: [1,1,1],[v1,v2,v3],1,r
-                        m = re.match(r"\[([\-\d,\s]+)\],\s*\[(.*)\],\s*(\-?\d+)(?:,\s*([a-zA-Z0-9_]+))?", args_str)
-                        if m:
-                            coeffs = [int(x) for x in m.group(1).split(',')]
-                            var_names = [x.strip() for x in m.group(2).split(',')]
-                            rhs = int(m.group(3))
-                            reif_var = m.group(4) if is_reif else None
-                            
-                            # Check if all vars are booleans
-                            # FZN uses explicit types usually, but here we check our registry
-                            try:
-                                lits = []
-                                valid_pb = True
-                                for i, vname in enumerate(var_names):
-                                    info = local_booleanizer.literal_to_info.get(abs(local_booleanizer.get_bool_literal(vname)))
-                                    # We need to recreate the literals. get_bool_literal returns IDs.
-                                    # Warning: get_bool_literal might auto-create if we are not careful, 
-                                    # but we populated from var decls earlier.
-                                    # But wait, PBEnc expects integer literals.
-                                    lit = local_booleanizer.get_bool_literal(vname)
-                                    lits.append(lit * coeffs[i])
-                                
-                                # Use PBEnc
-                                # sum(lits) <= rhs ("atmost") or == rhs ("equals")
-                                cnf = []
-                                c_type = c['type']
-                                
-                                if 'eq' in c_type:
-                                    # equals
-                                    # PBEnc.equals(lits=..., weights=..., bound=...) expects separate weights
-                                    # But lits here are weighted literals? No, PBEnc expects lits and weights separate.
-                                    # Actually lits in my list above include sign but not weight magnitude if using CardEnc.
-                                    # Let's separate.
-                                    
-                                    p_lits = [local_booleanizer.get_bool_literal(n) for n in var_names]
-                                    p_weights = coeffs
-                                    
-                                    if all(w == 1 for w in p_weights):
-                                        # Cardinality is generally better optimized
-                                        cnf = CardEnc.equals(lits=p_lits, bound=rhs, top_id=harness.max_id)
-                                    else:
-                                        cnf = PBEnc.equals(lits=p_lits, weights=p_weights, bound=rhs, top_id=harness.max_id)
-                                        
-                                else:
-                                    # le (<=)
-                                    p_lits = [local_booleanizer.get_bool_literal(n) for n in var_names]
-                                    p_weights = coeffs
-                                    
-                                    if all(w == 1 for w in p_weights):
-                                        cnf = CardEnc.atmost(lits=p_lits, bound=rhs, top_id=harness.max_id)
-                                    else:
-                                        cnf = PBEnc.atmost(lits=p_lits, weights=p_weights, bound=rhs, top_id=harness.max_id)
-                                
-                                # Update max_id for auxiliary variables created by encoding
-                                # PBEnc/CardEnc updates top_id? No, we pass top_id, it returns CNF using new vars > top_id
-                                # We need to track the new max_id used.
-                                # pysat encodings usually return clauses. We can scan clauses for max var.
-                                if cnf:
-                                    new_max = harness.max_id
-                                    for cl in cnf:
-                                        for l in cl:
-                                            new_max = max(new_max, abs(l))
-                                    harness.max_id = new_max
-                                    
-                                    # Handle Reification
-                                    if is_reif and reif_var:
-                                        # reif_var <-> (constraint)
-                                        # This is hard for arbitrary CNF.
-                                        # Simplified: If reified, we might skip or fail.
-                                        # Implementing reified PB is complex (Big-M or indicator constraints).
-                                        # For now, let's Warning on reified PB.
-                                        print(f"Warning: Skipping REIFICATION for int_lin constraint (Complexity): {c['raw']}")
-                                    else:
-                                        gid = c.get("group", f"c_{uuid.uuid4().hex[:4]}_pb")
-                                        harness.add_group(gid, cnf, {"raw": c["raw"], "type": c["type"]})
-                                        
-                            except Exception as e:
-                                print(f"Warning: Failed to encode int_lin as PB: {e}")
-
-                    else:
-                        print(f"Warning: MiniZinc Backend ignoring unhandled FZN constraint: {c['type']} ({c['args']})")
-                
-                # 4. Diagnose using Harness
-                report = harness.diagnose()
-                
-                # Write Debug Report
-                with open("output_debug.json", "w") as f:
-                    json.dump(report, f, indent=2)
-                
-                if report["status"] == "SAT":
-                    # Retrieve the first model from harness if available or re-solve
-                    # Ideally harness returns models. For now, let's re-solve simply to populate state
-                    # or assume the harness left the solver in SAT state? No, harness reconstructs.
-                    # Let's simple-solve for state population:
-                    
-                    solver = Solver(name="g3", bootstrap_with=harness.clauses) # Instrumented clauses!
-                    solver.solve(assumptions=[g["selector"] for g in harness.groups.values()])
-                    model = solver.get_model()
-                    
-                    decoded_vars = []
-                    decoded_map = {}
-                    for lit in model:
-                        if lit > 0:
-                             # Booleanizer map check
-                             info = local_booleanizer.literal_to_info.get(lit)
-                             if info:
-                                 name = info["name"]
-                                 decoded_vars.append(name)
-                                 decoded_map[name] = True
-                    
-                    # PREPARE OBSERVATION DATA (Output to Agent, NOT file)
-                    # The Agent is responsible for generating the final report.
-                    
-                    # 1. Variable Legend
-                    sorted_vars = sorted(local_booleanizer.literal_to_info.items())
-                    var_lookup = {lit: info['name'] for lit, info in sorted_vars}
-                    legend_str = "\n".join([f"{lit} <-> {info['name']}" for lit, info in sorted_vars])
-
-                    # 2. Readable CNF
-                    clean_clauses = []
-                    cnf_str_lines = []
-                    for clause in harness.clauses:
-                        clean = [l for l in clause if abs(l) <= max_id]
-                        if clean:
-                            clause_str_parts = []
-                            for l in clean:
-                                v_name = var_lookup.get(abs(l), f"var_{abs(l)}")
-                                if l < 0:
-                                    clause_str_parts.append(f"NOT {v_name}")
-                                else:
-                                    clause_str_parts.append(v_name)
-                            cnf_str_lines.append(f"({' OR '.join(clause_str_parts)})")
-                    cnf_str = "\n".join(cnf_str_lines)
-
-                    # 3. Store Solution in State
-                    state.solution = {v: (v in decoded_map) for v in local_booleanizer.var_map.keys() if local_booleanizer.var_map[v]["type"] == 'bool'}
-                    solver.delete()
-                    
-                    # Return RICH observation
-                    return (f"Solution Found!\n\n"
-                            f"=== VARIABLE LEGEND ===\n{legend_str}\n\n"
-                            f"=== FULL CNF CLAUSES ===\n{cnf_str}\n\n"
-                            f"=== RAW SOLUTION ===\n{', '.join(decoded_vars)}\n\n"
-                            f"INSTRUCTION: Use this information to write the final detailed report using the FINISH action.")
-                
-                else:
-                    # UNSAT
-                    # EXPORT CNF (User Request: Debug why CNF is wrong)
-                    cnf_file = "output.cnf"
-                    
-                    # We need to build a temp solver to dump constraints, as we didn't keep one open.
-                    # Harness has the clauses.
-                    # dump_solver = Solver(name="g3", bootstrap_with=harness.clauses)
-                    # dump_solver.to_file(cnf_file)
-                    # dump_solver.delete()
-                    
-                    core_groups = report.get("minimized_core", [])
-                    # Provide clearer feedback
-                    reason_msg = f"UNSAT. The constraints are contradictory."
-                    if core_groups:
-                         reason_msg += f"\nConflict Core (Failed Constraints):\n"
-                         for i, cg in enumerate(core_groups[:5]): # Show top 5
-                             reason_msg += f"  - Group {cg}\n"
-                         reason_msg += f"  (Total {len(core_groups)} conflicting groups. See output_debug.json for full details)"
-                    return reason_msg
-
-            except Exception as e:
-                # import traceback
-                # traceback.print_exc()
-                return f"Translation/Harness Failed: {e}"
-
+            fzn_content = compile_to_flatzinc(f_mzn)
         except Exception as e:
-            return f"Pipeline Error: {e}"
-        finally:
-            pass
+            raise RuntimeError(f"MiniZinc Compilation Failed:\n{e}")
+
+        # 3. Parse and Translate
+        vars_found, constrs_found = parse_flatzinc(fzn_content)
+        
+        # Init Booleanizer with shared VarManager
+        local_booleanizer = Booleanizer(state.var_manager)
+        
+        # Register Vars from FZN
+        for v in vars_found:
+            if v['type'] == 'bool':
+                local_booleanizer.register_bool(v['name'])
+            # Int support pending - logic inside booleanizer handles dynamic calls usually?
+            # register_bool will reuse ID if name matches existing (from Agent's define_variables)
+        
+        output_clauses = []
+        constraint_to_clause_ids = {}
+        aux_vars = set()
+        
+        backend_stats = {"mzn_constraints": len(constrs_found)}
+        
+        # Translate Constraints
+        for c in constrs_found:
+            current_clauses = []
+            
+            # (Translation Logic - Copied & Adapted from old solve)
+            if c['type'] == 'bool_clause':
+                args_str = c['args']
+                import re
+                m = re.match(r"\[(.*)\],\s*\[(.*)\]", args_str)
+                if m:
+                    pos_part = m.group(1).split(',') if m.group(1).strip() else []
+                    neg_part = m.group(2).split(',') if m.group(2).strip() else []
+                    clause = []
+                    for p in pos_part:
+                        if p.strip(): clause.append(local_booleanizer.get_bool_literal(p.strip()))
+                    for n in neg_part:
+                        if n.strip(): clause.append(-local_booleanizer.get_bool_literal(n.strip()))
+                    current_clauses.append(clause)
+            
+            elif c['type'] == 'bool_not':
+                args_part = c['args']
+                parts = [x.strip() for x in args_part.split(',')]
+                if len(parts) >= 2:
+                    a_name, b_name = parts[0], parts[1]
+                    try:
+                        lit_a = local_booleanizer.get_bool_literal(a_name)
+                        lit_b = local_booleanizer.get_bool_literal(b_name)
+                        current_clauses.append([lit_b, lit_a])
+                        current_clauses.append([-lit_b, -lit_a])
+                    except ValueError: pass
+
+            elif c['type'] in ['int_lin_le', 'int_lin_le_reif', 'int_lin_eq', 'int_lin_eq_reif']:
+                # Simplified translation logic
+                # ... (Assuming similar logic to before but creating clauses directly)
+                try:
+                    is_reif = c['type'].endswith('_reif')
+                    args_str = c['args']
+                    import re
+                    m = re.match(r"\[([\-\d,\s]+)\],\s*\[(.*)\],\s*(\-?\d+)(?:,\s*([a-zA-Z0-9_]+))?", args_str)
+                    if m:
+                        coeffs = [int(x) for x in m.group(1).split(',')]
+                        var_names = [x.strip() for x in m.group(2).split(',')]
+                        rhs = int(m.group(3))
+                        # reif_var = m.group(4) if is_reif else None
+                        
+                        p_lits = [local_booleanizer.get_bool_literal(n) for n in var_names]
+                        p_weights = coeffs
+                        
+                        top_id = state.var_manager.max_id
+                        cnf_obj = None
+                        
+                        if 'eq' in c['type']:
+                            if all(w == 1 for w in p_weights):
+                                cnf_obj = CardEnc.equals(lits=p_lits, bound=rhs, top_id=top_id)
+                            else:
+                                cnf_obj = PBEnc.equals(lits=p_lits, weights=p_weights, bound=rhs, top_id=top_id)
+                        else:
+                            if all(w == 1 for w in p_weights):
+                                cnf_obj = CardEnc.atmost(lits=p_lits, bound=rhs, top_id=top_id)
+                            else:
+                                cnf_obj = PBEnc.atmost(lits=p_lits, weights=p_weights, bound=rhs, top_id=top_id)
+                                
+                        if cnf_obj:
+                            current_clauses.extend(cnf_obj.clauses)
+                            num_new = cnf_obj.nv - top_id
+                            if num_new > 0:
+                                allocated = state.var_manager.reserve_block(num_new, prefix="mzn", namespace="enc")
+                                aux_vars.update(allocated)
+
+                except Exception as e:
+                    print(f"Warning: Failed to encode int_lin in MZN backend: {e}")
+
+            # Register clauses and provenance
+            if current_clauses:
+                start_idx = len(output_clauses)
+                output_clauses.extend(current_clauses)
+                end_idx = len(output_clauses)
+                
+                # Use 'group' annotation if present, else fallback
+                gid = c.get("group", f"c_mzn_{uuid.uuid4().hex[:4]}")
+                if gid not in constraint_to_clause_ids:
+                    constraint_to_clause_ids[gid] = []
+                constraint_to_clause_ids[gid].extend(range(start_idx, end_idx))
+        
+        artifact = CompilationArtifact(
+            backend_name=self.name,
+            encoding_config={},
+            clauses=output_clauses,
+            var_map=state.var_manager.get_var_map(),
+            id_to_name=state.var_manager.get_id_to_name(),
+            constraint_ids=list(constraint_to_clause_ids.keys()),
+            constraint_to_clause_ids=constraint_to_clause_ids,
+            aux_vars=aux_vars,
+            stats=backend_stats
+        )
+        
+        # Save to Cache
+        try:
+            with open(cache_path, "wb") as f:
+                pickle.dump(artifact, f)
+        except Exception as e:
+            print(f"MiniZincCoreBackend: Cache Save Failed: {e}")
+            
+        return artifact
+
+    def solve(self, state: AgentState) -> str:
+         return "DeprecationWarning: MiniZincBackend.solve is deprecated. Use SATManager."

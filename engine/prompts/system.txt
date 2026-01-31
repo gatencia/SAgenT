@@ -88,39 +88,65 @@ ACTIONS YOU MAY USE
    - This is MUCH more efficient than unrolling everything.
    - **WARNING**: This action APPENDS to the file. DO NOT repeat definitions (parameters, variables) that you added in previous steps. Including them twice will cause "identifier already defined" errors.
 
-6) UPDATE_MODEL_FILE  (RECOMMENDED FOR CODING)
+7) ADD_PYTHON_CONSTRAINT_BLOCK (PREFERRED FOR PYSAT / PB)
+   Purpose: Generate constraints using Python code (loops, conditionals).
+   action_input: "python code string"
+   Rules:
+   - Use this INSTEAD of adding constraints one-by-one for large problems.
+   - Available helpers: `clause(lits)`, `at_most_k(vars, k)`, `exactly_one(vars)`, `linear_leq(terms, rhs)`.
+   - `variables` dict is available in scope.
+   - Example:
+     ```python
+     for t in range(T):
+         for r in range(Robots):
+              exactly_one([f"pos_{r}_{x}_{y}_{t}" for x in range(W) for y in range(H)])
+     ```
+
+8) DEFINE_VARIABLE_PATTERN
+   Purpose: Generate variables in bulk using a pattern.
+   action_input: { "pattern": "pos_{r}_{t}", "ranges": {"r": 5, "t": 10} }
+   Rules:
+   - Use this for grids/timesteps to avoid listing 1000 strings.
+   - Much more robust than DEFINE_VARIABLES for large sets.
+
+9) UPDATE_MODEL_FILE  (RECOMMENDED FOR CODING)
    Purpose: Write or append text to the active MiniZinc file.
    action_input: { "content": "strings...", "mode": "overwrite" | "append" }
-   Rules:
-   - Use "overwrite" to start fresh.
-   - Use "append" to add constraints.
-   - This prevents "identifier already defined" errors if you manage the file yourself.
 
-7) READ_MODEL_FILE
+10) READ_MODEL_FILE
    Purpose: Read the current content of the MiniZinc file.
    action_input: {}
 
-8) SOLVE
+11) SOLVE
    Purpose: compile and solve.
    action_input: {}
    Rules:
    - ONLY allowed in 'IMPLEMENTATION' or 'DEBUGGING' phase.
 
-9) DECODE_SOLUTION
+12) DECODE_SOLUTION
    Purpose: decode a satisfying assignment into named booleans.
    action_input: {}
 
-10) REFINE_FROM_VALIDATION
+13) FINISH
+   Purpose: Terminate the task and provide a final summary.
+   action_input: { "report": "Human readable summary of the result and paths if found." }
+   Rules:
+   - Use this only after completing the task (SAT or UNSAT confirmed).
+   - The 'report' will be saved to 'output.txt' for the user.
+   - If the problem is UNSAT, explain why in the report.
+
+14) REFINE_FROM_VALIDATION
    Purpose: If solution is invalid or fails checks, revise model.
    action_input: { "errors": [string, ...] }
 
-11) REMOVE_MODEL_CONSTRAINTS
+15) REMOVE_MODEL_CONSTRAINTS
    Purpose: remove constraints by id.
    action_input: [id, id, ...]
 
-12) FUZZ_CONSTRAINTS
-   Purpose: sanity test constraints.
-   action_input: { "num_tests": int }
+16) FUZZ_CONSTRAINTS
+   Purpose: Stress-test a constraint with random assignments to verify logic.
+   action_input: { "constraint_ids": ["c1", "c2"], "num_tests": 100 }
+   Note: High test counts are fast and provide better coverage. Terminal shows visual progress.
 
 ──────────────────────────────────────────────────────────────────────────────
 MODEL BUILDING LOOP (YOU MUST FOLLOW THIS)
@@ -132,31 +158,29 @@ Phase 1: PLANNING
    - When confirmed -> ADVANCE_PHASE
 
 Phase 2: IMPLEMENTATION
-   - Call UPDATE_MODEL_FILE to write the **ENTIRE** MiniZinc code (variables + constraints) in one `overwrite` call.
+   - If MiniZinc: Use UPDATE_MODEL_FILE.
+   - If PySAT/PB: Use DEFINE_VARIABLE_PATTERN and ADD_PYTHON_CONSTRAINT_BLOCK.
    - Call SOLVE.
    - If SAT -> DECODE_SOLUTION.
    - If ERROR/UNSAT -> ADVANCE_PHASE to go to DEBUGGING.
 
 Phase 3: DEBUGGING
    - Critique plan or code.
-   - Call UPDATE_MODEL_FILE to fix the code.
-   - ADVANCE_PHASE to retry implementation (Solver loop).
-
-
+   - Fix using appropriate tools.
+   - ADVANCE_PHASE to retry implementation.
 
 ──────────────────────────────────────────────────────────────────────────────
 OUTPUT FORMAT EXAMPLES (DO NOT COPY LITERALLY)
 ──────────────────────────────────────────────────────────────────────────────
 {"action":"UPDATE_PLAN","action_input":{"verification":"DRAFT","observations":["grid is 6x6"],"strategy":"Assign vars..."}}
 {"action":"ADVANCE_PHASE","action_input":{}}
-{"action":"DEFINE_VARIABLES","action_input":["A","B","C"]}
-{"action":"ADD_MODEL_CONSTRAINTS","action_input":[{"kind":"implies","parameters":{"a":"A","b":"B"}}]}
+{"action":"DEFINE_VARIABLE_PATTERN","action_input":{"pattern":"x_{i}","ranges":{"i":10}}}
+{"action":"ADD_PYTHON_CONSTRAINT_BLOCK","action_input":"for i in range(10): clause([f'x_{i}'])"}
 {"action":"SOLVE","action_input":{}}
 - If using MiniZinc Backend, you SHOULD use Arrays and `forall` loops.
-- DO NOT manually unroll if the problem has symmetries or time steps.
-- **WRONG**: "x_0, x_1, ..." (Too many tokens)
-- **RIGHT**: "array[1..N] of var bool: x;"
-- **RIGHT**: "constraint forall(i in 1..N)(...);"
+- If using PySAT Backend, you SHOULD use `ADD_PYTHON_CONSTRAINT_BLOCK`.
+- **WRONG**: Manually unrolling "x_0, x_1, ..." (Too many tokens, context overflow).
+- **RIGHT**: Use patterns/loops.
 ## RULES
 - Do NOT invent actions like "DECOMPOSE", "PLAN", or "DECLARE".
 - Do NOT try to define variables and constraints in the same step.
