@@ -5,32 +5,39 @@
 
 ## Observations
 [
-  "Board dimensions: W=10, H=6. Total cells = 60.",
-  "One blocked cell: (4,2).",
-  "Available cells for tiling: 60 - 1 = 59.",
-  "Number of pentominoes: 12. Each covers 5 cells. Total cells covered = 12 * 5 = 60.",
-  "There is an area mismatch: 60 cells must be placed onto 59 available cells. This implies the problem is UNSAT.",
-  "Rotations and reflections are allowed for all pieces.",
-  "Each piece must be used exactly once.",
-  "Placements must be disjoint.",
-  "All non-blocked cells must be covered (all non-blocked cells must be part of exactly one piece).",
-  "Symmetry breaking: 'X' pentomino is anchored at (0,0) (top-left of its bounding box at board coordinate (0,0))."
+  "Grid dimensions: 8x8.",
+  "Timesteps T=20 (indexed 0 to 19).",
+  "4 robots with given start and goal positions.",
+  "Movement is 4-neighbor (up, down, left, right) plus wait (stay in current cell).",
+  "Collision model includes no vertex collision (no two robots in same cell at same time) and no edge swap collision (no two robots swap positions between timesteps).",
+  "Goal positions must be reached by t=T-1.",
+  "Several cells are blocked and cannot be occupied by any robot at any time."
 ]
 
 ## Variables
 [
-  "placement_P_O_x_y: Boolean, true if piece P (by index) with orientation O (by index) is placed with its top-left bounding box corner at grid coordinate (x,y). P (0-11), O (0-7), x (0-9), y (0-5)."
+  "pos_{r}_{x}_{y}_{t}: true if robot r is at (x,y) at timestep t."
 ]
 
 ## Constraints
 [
-  "1. Exactly one placement for each piece: For each piece type P, exactly one of its possible placements (P,O,x,y) must be true.",
-  "2. Each non-blocked cell is covered exactly once: For each grid cell (cx, cy) that is not blocked, exactly one piece's placement (P,O,x,y) must cover (cx,cy).",
-  "3. Symmetry Breaking: The 'X' pentomino must be placed with its top-left bounding box corner at (0,0). Since 'X' has only one unique orientation, this fixes its single placement."
+  "(1) Initial position: Robot r starts at (start_x, start_y) at t=0.",
+  "(2) Goal position: Robot r must be at (goal_x, goal_y) at t=T-1.",
+  "(3) Each robot occupies exactly one cell at each timestep.",
+  "(4) Movement: From (x,y) at t, robot can move to (x',y') (4-neighbor or wait) at t+1.",
+  "(5) No two robots occupy the same cell at the same timestep (vertex collision).",
+  "(6) No two robots swap positions between t and t+1 (edge swap collision).",
+  "(7) Robots cannot occupy blocked cells."
 ]
 
 ## Strategy
-Model the problem faithfully, expecting an UNSAT result due to the area mismatch. Boolean variables will represent piece placements. Constraints will enforce piece usage, non-overlap/full coverage, and symmetry breaking. Python helper functions within ADD_PYTHON_CONSTRAINT_BLOCK will generate all unique pentomino orientations and then define the constraints.
+1. Define Boolean variables for each robot's position at each cell and timestep.
+2. Add 'exactly_one' constraints for each robot at each timestep to ensure it occupies exactly one cell.
+3. Add 'clause' constraints to fix initial and goal positions.
+4. Add movement constraints using 'implies' or a disjunction of possible next positions.
+5. Add 'at_most_k' constraints for vertex collisions.
+6. Add 'clause' constraints for edge swap collisions.
+7. Add 'clause' constraints to forbid robots from entering blocked cells.
 
 ## Current Code
 ```json

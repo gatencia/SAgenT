@@ -1017,9 +1017,9 @@ class SATManager:
         # Store as (t, x, y) or (t, loc)
         raw_paths = {} # r -> list of tuples
         
-        # Loosen regex: allow any separator, handle R0 vs 0
-        p_grid = re.compile(r"pos[._](\d+)[._](\d+)[._](\d+)[._](\d+)")
-        p_node = re.compile(r"pos[._](\d+)[._]([a-zA-Z0-9]+)[._](\d+)")
+        # Loosen regex: allow any separator, handle R0 vs 0, and alphanumeric robot names
+        p_grid = re.compile(r"pos[._]([a-zA-Z0-9]+)[._](\d+)[._](\d+)[._](\d+)")
+        p_node = re.compile(r"pos[._]([a-zA-Z0-9]+)[._]([a-zA-Z0-9]+)[._](\d+)")
 
         grid_count = 0
         node_count = 0
@@ -1030,9 +1030,9 @@ class SATManager:
             m = p_grid.search(var) 
             if m:
                 grid_count += 1
-                r, x, y, t = map(int, m.groups())
+                r, x, y, t = m.groups()
                 if r not in raw_paths: raw_paths[r] = []
-                raw_paths[r].append((t, x, y))
+                raw_paths[r].append((int(t), [int(x), int(y)]))
                 continue
                 
             # Check Node
@@ -1052,12 +1052,36 @@ class SATManager:
             
         # Sort and Format
         final_paths = {}
+        
+        # Heuristic: try to map numerical indices to names if found in state.plan/observations
+        id_to_name = {}
+        if state.plan and "observations" in state.plan:
+             obs_str = str(state.plan["observations"])
+             # Look for single uppercase letters that might be robot names
+             # E.g. "Robots A, B, C, D" -> ["A", "B", "C", "D"]
+             m_names = sorted(list(set(re.findall(r"\b([A-Z])\b", obs_str))))
+             if len(m_names) == len(raw_paths):
+                  for i, name in enumerate(m_names):
+                       id_to_name[str(i)] = name
+             elif len(m_names) > len(raw_paths):
+                  # Maybe too many capital letters, try to filter for those mentioned near 'robot' or 'agent'
+                  pass
+
         for r, bumps in raw_paths.items():
             # Sort by T
             bumps.sort(key=lambda x: x[0])
-            # Strip T from tuple? Or keep?
-            # Keeping T is safer to detect gaps
-            final_paths[str(r)] = bumps
+            
+            # The checker expects a list where index is T
+            # [[x1, y1], [x2, y2], ...]
+            # Handle gaps if necessary, but assume continuous for now
+            max_t = max(b[0] for b in bumps)
+            path_list = [None] * (max_t + 1)
+            for t, pos in bumps:
+                path_list[t] = pos
+            
+            # Use name if mapped, else stringified ID
+            name_key = id_to_name.get(str(r), str(r))
+            final_paths[name_key] = path_list
             
         return final_paths
 

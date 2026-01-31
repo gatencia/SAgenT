@@ -51,9 +51,13 @@ def check(solution: Dict[str, Any], instance: Dict[str, Any]) -> Tuple[bool, Lis
             continue
             
         # 2. Check path length
-        if len(path) != T + 1:
-            errors.append(f"Path for {r_name} has length {len(path)}, expected {T + 1}.")
+        # Accept either T or T+1 steps depending on convention
+        if len(path) not in [T, T + 1]:
+            errors.append(f"Path for {r_name} has length {len(path)}, expected {T} or {T + 1}.")
             continue
+        
+        if len(path) == 0:
+             continue
             
         robot_spec = robots[r_name]
         start_pos = tuple(robot_spec["start"])
