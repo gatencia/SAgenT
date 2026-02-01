@@ -1,5 +1,16 @@
 # LLM-SAT: Agentic Constraint Solving
 
+Hi! Here is the updated README : D
+I changed a good amount of things since our last meeting on friday, including some new instances. If you want to simply interact with how the system works, here is a command to run a relatively easy instance:
+
+python3 bench/run_bench.py --id mrpp_8x8_4r_T20_sat_central_block --provider google --insecure
+
+Also, if you are on macOS, keeping the --insecure flag is helpful as it bypasses potential SSL certificate issues with the Python urllib calls to the Gemini API. 
+If there is any info missing in the README please let me know. Cheers, Guillaume
+
+
+
+
 LLM-SAT is a **ReAct-based Agentic Framework** that bridges the gap between high-level natural language reasoning and low-level SAT/Constraint solving. It uses Large Language Models (LLMs) to formulate problems and rigorous solvers (PySAT, MiniZinc) to solve them.
 
 ---
@@ -50,6 +61,27 @@ If the solver returns `UNSAT` (unexpectedly) or fails validation, the agent anal
 | **`SOLVE`** | Compile and run the backend solver. |
 | **`DECODE_SOLUTION`** | Map raw boolean assignments back to domain variables. |
 | **`FINISH`** | Complete the task and provide the final solution. |
+
+## 🏃 Running Benchmarks
+
+Use the `run_bench.py` script to execute the agent on specific problems or entire families.
+
+```bash
+python3 bench/run_bench.py [ARGS]
+```
+
+### CLI Arguments
+
+| Argument | Description |
+| :--- | :--- |
+| **`--id <id>`** | Run a specific instance by its ID (e.g., `poly_pentomino_10x6_hole_sat`). |
+| **`--family <name>`**| Filter instances by family (e.g., `mrpp`, `pentomino`). |
+| **`--provider <p>`** | LLM Provider: `google` (default), `openai`, `ollama`, or `mock`. |
+| **`--model <m>`** | Specify the model name (e.g., `gemini-1.5-pro-latest`). |
+| **`--IR <backend>`** | Choose the IR Backend: `pb` (default), `cnf`, or `minizinc`. |
+| **`--max_steps <n>`** | Limit the number of steps the agent can take (default: 30). |
+| **`--insecure`** | **macOS Tip**: Bypass SSL certificate verification for Python's `urllib`. |
+| **`--api_key <key>`** | Provide the API key manually instead of using `.env`. |
 
 ---
 

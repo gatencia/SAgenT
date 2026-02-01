@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/embed/index.py
+# hypothesis_version: 6.151.4
+
+[1.0, 'VectorIndex', 'auto', 'backend', 'cosine', 'faiss', 'float32', 'ids', 'metric', 'sklearn', 'vectors']

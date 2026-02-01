@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/core/logging.py
+# hypothesis_version: 6.151.4
+
+['%Y-%m-%dT%H:%M:%SZ', 'DENABASE_LOG_LEVEL', 'INFO', 'denabase']

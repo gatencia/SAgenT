@@ -986,7 +986,7 @@ class SATManager:
         
         # MRPP Heuristic
         try:
-            paths = self._decode_mrpp(res.model)
+            paths = self._decode_mrpp(state, res.model)
             if paths:
                 ds.paths = paths
                 print(f"{GREEN}SATManager: Decoded paths for {len(paths)} agents.{RESET}")
@@ -1004,67 +1004,112 @@ class SATManager:
                  summary += f"  Agent {r}: {p}\n"
         return summary
 
-    def _decode_mrpp(self, model: Dict[str, bool]) -> Dict[str, List[Any]]:
+    def _decode_mrpp(self, state: AgentState, model: Dict[str, bool]) -> Dict[str, List[Any]]:
         """
         Heuristic decoder for patterns:
         1. pos_{r}_{x}_{y}_{t} (Boolean Grid)
         2. pos_{r}_{loc}_{t} (Graph Node)
+        3. robot_x[r,t] / robot_y[r,t] (Integer/MiniZinc)
         """
-        # Regex
-        p_grid = re.compile(r"pos_(\d+)_(\d+)_(\d+)_(\d+)")
-        p_node = re.compile(r"pos_(\d+)_([a-zA-Z0-9]+)_(\d+)")
+        # 1. Regex patterns for different representations
+        # pos[r][x][y][t] or pos_r_x_y_t
+        p_r_x_y_t = re.compile(r"pos[._]([a-zA-Z0-9]+)[._](\d+)[._](\d+)[._](\d+)")
+        # pos[r][t][x][y] (Common in MiniZinc)
+        p_r_t_x_y = re.compile(r"pos[._]([a-zA-Z0-9]+)[._]([a-zA-Z0-9]+)[._](\d+)[._](\d+)")
+        # pos[r][loc][t]
+        p_node = re.compile(r"pos[._]([a-zA-Z0-9]+)[._]([a-zA-Z0-9\_]+)[._](\d+)")
         
-        # Store as (t, x, y) or (t, loc)
-        raw_paths = {} # r -> list of tuples
+        # Store for heuristic discovery
+        # Map: robot -> list of (t, x, y) or (t, loc)
+        raw_paths = {} 
         
-        # Loosen regex: allow any separator, handle R0 vs 0, and alphanumeric robot names
-        p_grid = re.compile(r"pos[._]([a-zA-Z0-9]+)[._](\d+)[._](\d+)[._](\d+)")
-        p_node = re.compile(r"pos[._]([a-zA-Z0-9]+)[._]([a-zA-Z0-9]+)[._](\d+)")
-
         grid_count = 0
         node_count = 0
         true_vars = [k for k, v in model.items() if v]
 
         for var in true_vars:
-            # Check Grid
-            m = p_grid.search(var) 
+            # Try r, x, y, t
+            m = p_r_x_y_t.search(var) 
             if m:
-                grid_count += 1
                 r, x, y, t = m.groups()
+                # Heuristic check: is it really r,x,y,t or r,t,x,y?
+                # If t > 100 and x < 10, it's probably r,t,x,y handled by the second regex
                 if r not in raw_paths: raw_paths[r] = []
                 raw_paths[r].append((int(t), [int(x), int(y)]))
+                grid_count += 1
+                continue
+            
+            # Try r, t, x, y
+            m = p_r_t_x_y.search(var)
+            if m:
+                r, t, x, y = m.groups()
+                if r not in raw_paths: raw_paths[r] = []
+                raw_paths[r].append((int(t), [int(x), int(y)]))
+                grid_count += 1
                 continue
                 
             # Check Node
             m = p_node.search(var)
             if m:
-                node_count += 1
                 r, loc, t = m.groups()
-                t = int(t)
-                if r not in raw_paths: raw_paths[r] = []
-                raw_paths[r].append((t, loc))
+                try:
+                    t_val = int(t)
+                    if r not in raw_paths: raw_paths[r] = []
+                    raw_paths[r].append((t_val, loc))
+                    node_count += 1
+                except: continue
+
+        # 2. MiniZinc specialized check (robot_x[r,t], robot_y[r,t])
+        # Note: model might contain "robot_x[0,0] = 1" or similar
+        # We also look for robot_x_0_0 and robot_x[0,0]
+        p_mzn_x = re.compile(r"robot[._]x[._\[](\d+)[,._](\d+)")
+        p_mzn_y = re.compile(r"robot[._]y[._\[](\d+)[,._](\d+)")
+        
+        mzn_x = {} # (r, t) -> int
+        mzn_y = {} # (r, t) -> int
+        
+        for var, val in model.items():
+            mx = p_mzn_x.search(var)
+            if mx:
+                 r_idx, t_idx = map(int, mx.groups())
+                 mzn_x[(r_idx, t_idx)] = int(val)
+                 continue
+            my = p_mzn_y.search(var)
+            if my:
+                 r_idx, t_idx = map(int, my.groups())
+                 mzn_y[(r_idx, t_idx)] = int(val)
+
+        if mzn_x and mzn_y:
+            for (r, t), x_val in mzn_x.items():
+                if (r, t) in mzn_y:
+                    r_str = str(r)
+                    if r_str not in raw_paths: raw_paths[r_str] = []
+                    raw_paths[r_str].append((t, [x_val, mzn_y[(r, t)]]))
+                    grid_count += 1
         
         if grid_count or node_count:
              print(f"{DIM}SATManager: Decoded {grid_count} grid points and {node_count} node points.{RESET}")
         else:
              print(f"{YELLOW}SATManager: No MRPP patterns matched in model.{RESET}")
-             print(f"{YELLOW}Sample True Variables: {true_vars[:10]}{RESET}")
+             if true_vars:
+                  print(f"{YELLOW}Sample True Variables: {true_vars[:10]}{RESET}")
+                  if any("X_INTRODUCED" in v for v in true_vars[:100]):
+                       print(f"{YELLOW}SATManager: Detected 'X_INTRODUCED' variables. This usually means names were lost in translation (e.g. MiniZinc bit-blasting).{RESET}")
             
-        # Sort and Format
+        # 3. Sort and Format
         final_paths = {}
         
         # Heuristic: try to map numerical indices to names if found in state.plan/observations
         id_to_name = {}
         if state.plan and "observations" in state.plan:
              obs_str = str(state.plan["observations"])
-             # Look for single uppercase letters that might be robot names
-             # E.g. "Robots A, B, C, D" -> ["A", "B", "C", "D"]
              m_names = sorted(list(set(re.findall(r"\b([A-Z])\b", obs_str))))
              if len(m_names) == len(raw_paths):
                   for i, name in enumerate(m_names):
                        id_to_name[str(i)] = name
              elif len(m_names) > len(raw_paths):
-                  # Maybe too many capital letters, try to filter for those mentioned near 'robot' or 'agent'
+                  # Heuristic: map based on first mention? 
+                  # For now just use numerical ids if ambiguous
                   pass
 
         for r, bumps in raw_paths.items():
@@ -1073,14 +1118,20 @@ class SATManager:
             
             # The checker expects a list where index is T
             # [[x1, y1], [x2, y2], ...]
-            # Handle gaps if necessary, but assume continuous for now
+            # Assume continuous for now
+            if not bumps: continue
             max_t = max(b[0] for b in bumps)
             path_list = [None] * (max_t + 1)
             for t, pos in bumps:
-                path_list[t] = pos
+                if t <= max_t:
+                    path_list[t] = pos
             
             # Use name if mapped, else stringified ID
-            name_key = id_to_name.get(str(r), str(r))
+            # Handle R0/Robot0 prefixes
+            clean_r = re.sub(r'^[Rr]obot', '', str(r)).lstrip('0')
+            if not clean_r: clean_r = "0" # Special case for Robot0
+            
+            name_key = id_to_name.get(clean_r, str(r))
             final_paths[name_key] = path_list
             
         return final_paths

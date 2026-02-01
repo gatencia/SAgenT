@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/connectivity/rank_tree.py
+# hypothesis_version: 6.151.4
+
+['-~', '8', 'List[str]', 'Optional[str]', 'adjacency', 'cells', 'connected_8', 'description', 'parameters', 'root']

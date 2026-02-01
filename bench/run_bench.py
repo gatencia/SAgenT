@@ -377,7 +377,21 @@ def run_benchmark(args):
     
     # Cleanup old artifacts
     if os.path.exists("output.txt"): os.remove("output.txt")
+    import shutil
     if os.path.exists("output_debug.json"): os.remove("output_debug.json")
+    if os.path.exists("memory"):
+        print(f"Cleaning up memory folder...")
+        for filename in os.listdir("memory"):
+            file_path = os.path.join("memory", filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}. Reason: {e}")
+    else:
+        os.makedirs("memory")
 
     if not os.path.exists(runs_dir):
         os.makedirs(runs_dir)
@@ -480,9 +494,30 @@ def run_benchmark(args):
             json.dump(run_data, f, indent=2)
             
         # 7. Print Summary
-        status_str = str(state.final_status) if state.final_status else "None"
-        checker_str = "PASS" if checker_ok else "FAIL"
-        print(f"{instance_id:<25} | {family:<10} | {status_str:<10} | {checker_str:<10} | {len(state.trajectory):<5} | {len(state.model_constraints):<5}")
+        RED = "\033[91m"
+        GREEN = "\033[92m"
+        BOLD = "\033[1m"
+        DIM = "\033[2m"
+        RESET = "\033[0m"
+
+        res_color = GREEN if checker_ok else RED
+        res_str = "PASS" if checker_ok else "FAIL"
+        status_brief = str(state.final_status)[:8] if state.final_status else "None"
+        
+        print(f"{res_color}{instance_id:<25} | {family:<10} | {status_brief:<10} | {res_str:<10} | {len(state.trajectory):<5} | {len(state.model_constraints):<5}{RESET}")
+        
+        if state.final_status:
+             print(f"\n{BOLD}Final Agent Report:{RESET}")
+             print(f"{state.final_status}\n")
+        
+        if not checker_ok and checker_errors:
+             print(f"{RED}Checker Errors:{RESET}")
+             for err in checker_errors:
+                  print(f"  - {err}")
+        
+        run_file_abs = os.path.abspath(run_file)
+        print(f"\n{DIM}Detailed run log: {run_file_abs}{RESET}")
+        print(f"{DIM}Final output report: {os.path.abspath('output.txt')}{RESET}\n")
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SAT ReAct Benchmark Runner")

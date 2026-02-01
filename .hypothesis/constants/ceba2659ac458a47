@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/ir/ir_types.py
+# hypothesis_version: 6.151.4
+
+['BoolExpr', 'CardinalityBase', '^[a-zA-Z0-9_]+$', 'after', 'and', 'at_least', 'at_most', 'exactly', 'iff', 'imp', 'kind', 'lit', 'name', 'not', 'or', 'terms', 'vars', 'xor']

@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/agent.py
+# hypothesis_version: 6.151.4
+
+[100, 500, '\nCURRENT PLAN:\n', '\x1b[0m', '\x1b[1m', '\x1b[2m', '\x1b[91m', '\x1b[92m', '\x1b[93m', '\x1b[94m', '\x1b[K', '(None)\n', '... [TRUNCATED]', '=', 'ADD_CONSTRAINTS', 'COMPILE', 'CREATE_CONSTRAINTS', 'CREATE_VARIABLES', 'DECLARE_VARIABLES', 'DECOMPOSE', 'DEFINE_VARIABLES', 'Deprecated', 'ERROR', 'Error', 'INVALID', 'ParseFail', 'SCHEMA REMINDER:\n', 'SOLVE', '[CONTEXT STATE]\n', '\\{.*\\}', '_', '```', 'action', 'action_input', 'errors', 'name', 'pass', 'prompts', 'r', 'system.txt', 'thought', 'variables', '}']

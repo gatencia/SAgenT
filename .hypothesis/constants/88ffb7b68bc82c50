@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/select/encoding_selector.py
+# hypothesis_version: 6.151.4
+
+[0.0, 0.5, 'all_k', 'all_size', 'default', 'degree_desc', 'density', 'pairwise', 'sequential', 'tseitin_full', 'tseitin_min']

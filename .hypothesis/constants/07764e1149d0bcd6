@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/verify/verifier.py
+# hypothesis_version: 6.151.4
+
+[10.0, 1000, 'FAILED', 'PASSED', 'UNKNOWN', 'cadical153', 'duration', 'solve', 'witness_check']

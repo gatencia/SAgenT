@@ -1,0 +1,29 @@
+{
+  "cb4cf595-440e-474b-b5b1-1d9edd665246": {
+    "id": "cb4cf595-440e-474b-b5b1-1d9edd665246",
+    "metadata": {
+      "family": "smoke",
+      "problem_id": "test-1",
+      "tags": [],
+      "custom": {}
+    },
+    "stats": {
+      "num_variables": 3,
+      "num_clauses": 2,
+      "num_literals": 5,
+      "density": 2.5
+    },
+    "embedding": [
+      6.0,
+      5.0,
+      1.6666666269302368,
+      0.3333333432674408,
+      0.6666666865348816,
+      3.0,
+      0.0,
+      1.0
+    ],
+    "verification": null,
+    "cnf_path": "smoke_db/cb4cf595-440e-474b-b5b1-1d9edd665246.cnf"
+  }
+}

@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/tools/mzn_to_fzn.py
+# hypothesis_version: 6.151.4
+
+['\n--- Constraints ---', '\n--- Variables ---', '%', '--compile', '--output-to-file', '--solver', '.fzn', '.mzn', '__main__', 'args', 'chuffed', 'group', 'minizinc', 'mzn_file', 'name', 'r', 'raw', 'type']

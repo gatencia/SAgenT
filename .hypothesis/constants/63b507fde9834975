@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/solution/types.py
+# hypothesis_version: 6.151.4
+
+[0.0, 'SAT', 'UNKNOWN', 'UNSAT', 'grid', 'is_valid', 'paths', 'variables']

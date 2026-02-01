@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/debug_harness.py
+# hypothesis_version: 6.151.4
+
+[1000, 'SAT', 'UNSAT', 'clause_count', 'conflict_info', 'g3', 'info', 'minimized_core', 'model_count', 'models', 'selector', 'status', 'time_minimize', 'time_solve', 'total_clauses', 'total_groups', 'total_vars', 'unsat_core_groups', 'unsat_core_size']

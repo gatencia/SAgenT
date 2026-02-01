@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/select/solver_selector.py
+# hypothesis_version: 6.151.4
+
+[10000, 50000, 'cadical153', 'clauses', 'glucose3', 'glucose4', 'm22', 'n_clauses', 'n_vars', 'vars']

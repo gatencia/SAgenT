@@ -1,7 +1,7 @@
-output ["pos_x = ",show(pos_x),";\n","pos_y = ",show(pos_y),";\n"];
-set of int: TIMES = 0..7;
-set of int: ROBOTS = 1..3;
-array [1..24] of int: X_INTRODUCED_25_;
-array [ROBOTS,TIMES] of int: pos_y = array2d(1..3,0..7,X_INTRODUCED_25_);
-array [1..24] of int: X_INTRODUCED_0_;
-array [ROBOTS,TIMES] of int: pos_x = array2d(1..3,0..7,X_INTRODUCED_0_);
+output ["pos = array4d(1..4, 0..19, 0..7, 0..7, ",showDzn(pos),");\n"];
+set of int: Coords_Y = 0..7;
+set of int: Coords_X = 0..7;
+set of int: Time = 0..19;
+set of int: Robots = 1..4;
+array [1..5120] of bool: X_INTRODUCED_0_;
+array [Robots,Time,Coords_X,Coords_Y] of bool: pos = array4d(1..4,0..19,0..7,0..7,X_INTRODUCED_0_);

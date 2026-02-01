@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/gadgets/gadget_spec.py
+# hypothesis_version: 6.151.4
+
+['1.0', 'a', 'array', 'at_most_one', 'b', 'c', 'cardinality', 'edges', 'exactly_one', 'graph', 'integer', 'items', 'k', 'k_coloring', 'n', 'object', 'properties', 'required', 'string', 'type', 'vars', 'x']

@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/profile/ir_profile.py
+# hypothesis_version: 6.151.4
+
+['all_k', 'all_size', 'and', 'at_least', 'at_most', 'exactly', 'iff', 'imp', 'lit', 'not', 'or', 'xor']

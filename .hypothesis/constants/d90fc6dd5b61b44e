@@ -1,0 +1,4 @@
+# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/backends/cnf.py
+# hypothesis_version: 6.151.4
+
+['!', '-', '-~', '-~!', 'List[str]', 'clause', 'cnf', 'description', 'literals', 'parameters', '~']
