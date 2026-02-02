@@ -127,7 +127,12 @@ Cardinality = Annotated[
     Field(discriminator="kind")
 ]
 
-# --- IR Container ---
+class FixedCNF(BaseModel):
+    """
+    Represents a fixed CNF fragment (e.g. from a learned gadget fallback).
+    """
+    kind: Literal["fixed_cnf"] = "fixed_cnf"
+    clauses: List[List[int]] # Raw DIMACS-style clauses (internal vars 1..N)
+    vars: List[VarRef] # Positional ports mapping to internal vars 1..len(vars)
 
-class IR(RootModel):
-    root: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardinality]]]
+IR = RootModel[Union[BoolExpr, Cardinality, FixedCNF, List[Union[BoolExpr, Cardinality, FixedCNF]]]]

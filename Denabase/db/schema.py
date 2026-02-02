@@ -42,6 +42,8 @@ class EntryMeta(BaseModel):
     expected_label: Optional[str] = None # "SAT", "UNSAT"
     split: Optional[str] = None
     dataset_id: Optional[str] = None
+    trace_path: Optional[str] = None
+    has_trace: bool = False
     tags: List[str] = Field(default_factory=list)
     user_meta: Dict[str, Any] = Field(default_factory=dict)
 

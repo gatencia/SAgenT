@@ -225,6 +225,47 @@ You are using the Pseudo-Boolean backend.
             cnf_obj = None
             
             # -- Constraint Logic (mirroring compile_constraints) --
+            
+            # Trace Logging
+            if hasattr(state, "denabase_trace") and state.denabase_trace is not None:
+                # Capture sketch step
+                try:
+                    from Denabase.trace import TraceEvent
+                    # Normalize Payload
+                    # 1. Type
+                    t_type = k
+                    
+                    # 2. k
+                    t_k = None
+                    if "k" in p: t_k = int(p["k"])
+                    elif k == "exactly_one": t_k = 1
+                    
+                    # 3. Vars & Arity
+                    t_vars = []
+                    if "vars" in p and isinstance(p["vars"], list):
+                        t_vars = [str(v) for v in p["vars"]]
+                    elif "literals" in p and isinstance(p["literals"], list):
+                        t_vars = [str(l).lstrip("-~!") for l in p["literals"]]
+                    elif "terms" in p and isinstance(p["terms"], list):
+                        t_vars = [str(t["var"]) for t in p["terms"]]
+                    elif "a" in p and "b" in p:
+                        t_vars = [str(p["a"]).lstrip("-~!"), str(p["b"]).lstrip("-~!")]
+                        
+                    t_arity = len(t_vars)
+                    
+                    # Construct
+                    payload = {
+                        "type": t_type,
+                        "k": t_k,
+                        "arity": t_arity,
+                        "vars": t_vars,
+                        **p
+                    }
+                    state.denabase_trace.events.append(TraceEvent(kind="IR_NODE", payload=payload))
+                except Exception as e: 
+                    # print(f"Trace Error: {e}") 
+                    pass
+
             if k == "cnf_clauses":
                  if "clauses" in p: current_clauses.extend(p["clauses"])
             

@@ -15,6 +15,7 @@ from Denabase.embed.index import VectorIndex
 from Denabase.core.cache import DiskCache
 from Denabase.ir import compile_ir, normalize_ir, IR
 from Denabase.cnf.cnf_types import CnfDocument
+from Denabase.trace import EncodingTrace
 from Denabase.cnf.cnf_stats import compute_cnf_stats
 from Denabase.profile.cnf_profile import compute_cnf_profile, compute_ir_profile
 from Denabase.graph.fingerprints import compute_fingerprint, Fingerprint
@@ -695,3 +696,23 @@ class DenaBase:
         self.store.set_meta(meta)
         
         return count
+
+    def attach_trace(self, entry_id: str, trace: EncodingTrace) -> None:
+        """Attaches a trace to an existing entry."""
+        rec = self.store.get_entry_record(entry_id)
+        if not rec:
+            raise ValueError(f"Entry {entry_id} not found")
+        
+        # Save trace artifact
+        rel_path = self.store.save_trace(entry_id, trace)
+        
+        # Update metadata
+        rec.meta.trace_path = rel_path
+        rec.meta.has_trace = True
+        
+        # Save updated record
+        self.store.put_entry(rec, {})
+
+    def get_trace(self, entry_id: str) -> Optional[EncodingTrace]:
+        """Retrieves the trace for an entry."""
+        return self.store.load_trace(entry_id)

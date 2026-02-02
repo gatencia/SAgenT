@@ -83,6 +83,30 @@ def handle_ingest_satbench(args):
     ok, fail = ingest_manifest(db, records, root=args.root, verify=args.verify)
     print(f"Done. Success: {ok}, Failures: {fail}")
 
+def handle_sleep(args):
+    print(f"Starting sleep cycle on {args.db_path}...")
+    db = DenaBase.open(args.db_path)
+    from Denabase.sleep.sleep_runner import SleepRunner
+    runner = SleepRunner(db)
+    
+    stats = runner.run_sleep_cycle(
+        min_freq=args.min_freq,
+        top_k=args.top_k,
+        seed=args.seed
+    )
+    
+    print("\nSleep Cycle Completed:")
+    print(f"  Pack Version: {stats['version']}")
+    print(f"  Candidates Found: {stats['candidates_found']}")
+    print(f"  Verified Macros: {stats['verified_count']}")
+    print(f"  Report Location: {Path(args.db_path) / 'gadgets' / 'packs' / stats['version'] / 'reports'}")
+
+def handle_load_pack(args):
+    print(f"Loading pack from {args.pack_dir}...")
+    from Denabase.gadgets.gadget_pack import load_pack
+    load_pack(Path(args.pack_dir))
+    print("Done.")
+
 def main():
     parser = argparse.ArgumentParser(description="Denabase CLI - Manage verified SAT encodings.")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
@@ -131,6 +155,20 @@ def main():
     ingest_parser.add_argument("--root", type=str, help="Root directory for CNF files")
     ingest_parser.add_argument("--verify", action="store_true", help="Run strict verification")
     ingest_parser.set_defaults(func=handle_ingest_satbench)
+    
+    # Sleep
+    sleep_parser = subparsers.add_parser("sleep", help="Run the StitchLite sleep cycle.")
+    sleep_parser.add_argument("db_path", type=str, help="Path to the Denabase directory.")
+    sleep_parser.add_argument("--min-freq", type=int, default=2, help="Minimum frequency for motifs.")
+    sleep_parser.add_argument("--top-k", type=int, default=5, help="Number of candidates to consider.")
+    sleep_parser.add_argument("--seed", type=int, default=42, help="Random seed.")
+    sleep_parser.set_defaults(func=handle_sleep)
+
+    # Load Pack
+    pack_parser = subparsers.add_parser("load-pack", help="Load a gadget pack into the registry.")
+    pack_parser.add_argument("db_path", type=str, help="Path to the Denabase directory.")
+    pack_parser.add_argument("pack_dir", type=str, help="Path to the pack directory.")
+    pack_parser.set_defaults(func=handle_load_pack)
 
     args = parser.parse_args()
     if not args.command:

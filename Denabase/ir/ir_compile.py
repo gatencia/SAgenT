@@ -1,10 +1,11 @@
-from typing import Dict, List, Set, Tuple, Union
+from typing import Dict, List, Set, Tuple, Union, Optional
 import uuid
 from Denabase.ir.ir_types import (
-    BoolExpr, Lit, Not, And, Or, Imp, Iff, Xor, VarRef, Cardinality, AtLeast, AtMost, Exactly
+    BoolExpr, Lit, Not, And, Or, Imp, Iff, Xor, VarRef, Cardinality, AtLeast, AtMost, Exactly, FixedCNF
 )
 from Denabase.ir.ir_normalize import normalize_ir
 from Denabase.cnf.cnf_types import CNFEncoding
+from Denabase.trace import EncodingTrace, TraceEvent
 
 class CompilationContext:
     def __init__(self, base_vars: List[str]):
@@ -148,9 +149,82 @@ def encode_cardinality(card: Cardinality, ctx: CompilationContext, recipe: Encod
         else:
             encode_at_most(n - k, not_x, ctx)
 
-def compile_ir(ir_obj: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardinality]]], recipe: EncodingRecipe = None) -> Tuple[CNFEncoding, Dict[str, int]]:
+def encode_fixed_cnf(obj: FixedCNF, ctx: CompilationContext):
+    """
+    Encodes a FixedCNF fragment by inlining clauses and remapping variables.
+    obj.vars[i] (0-indexed) corresponds to internal variable i+1 (1-indexed).
+    Internal variables > len(obj.vars) are treated as internal auxiliaries and mapped to new unique aux variables.
+    """
+    # 1. Build mapping table
+    mapping = {}
+    
+    # Map ports (1..N)
+    for i, v_ref in enumerate(obj.vars):
+        internal_id = i + 1
+        if v_ref.name not in ctx.varmap:
+            raise ValueError(f"FixedCNF reference to unknown variable: {v_ref.name}")
+        mapping[internal_id] = ctx.varmap[v_ref.name]
+        
+    # 2. Iterate clauses
+    # We need to discover max internal var to know if there are hidden auxiliaries
+    max_int_var = 0
+    if obj.clauses:
+        max_int_var = max(abs(l) for c in obj.clauses for l in c)
+        
+    num_ports = len(obj.vars)
+    # Allocate new aux for internal auxiliaries (num_ports+1 ... max_int_var)
+    for i in range(num_ports + 1, max_int_var + 1):
+        mapping[i] = ctx.allocate_aux()
+        
+    # 3. Rewrite and Add
+    for clause in obj.clauses:
+        new_clause = []
+        for lit in clause:
+            var = abs(lit)
+            is_neg = (lit < 0)
+            
+            if var not in mapping:
+                # Should not happen if max_int_var calculation correct
+                # Maybe 0? DIMACS shouldn't have 0.
+                raise ValueError(f"FixedCNF contains unmapped variable {var}")
+                
+            mapped_var = mapping[var]
+            new_clause.append(-mapped_var if is_neg else mapped_var)
+            
+        ctx.add_clause(new_clause)
+
+def compile_ir(ir_obj: Union[BoolExpr, Cardinality, FixedCNF, List[Union[BoolExpr, Cardinality, FixedCNF]]], 
+               recipe: EncodingRecipe = None,
+               trace: Optional[EncodingTrace] = None) -> Tuple[CNFEncoding, Dict[str, int]]:
     """Compiles IR to CNF."""
     objs = ir_obj if isinstance(ir_obj, list) else [ir_obj]
+    
+    # Trace Logging (Pre-compilation)
+    if trace is not None:
+        for i, obj in enumerate(objs):
+            payload = {"step_index": i}
+            if isinstance(obj, (AtLeast, AtMost, Exactly)):
+                payload["type"] = obj.__class__.__name__
+                payload["k"] = obj.k
+                payload["vars"] = [v.name for v in obj.vars]
+                payload["arity"] = len(obj.vars)
+                # Parameters for recipes could be logged here too
+            elif isinstance(obj, (And, Or, Not, Imp, Iff, Xor)):
+                payload["type"] = obj.__class__.__name__
+                # Shallow log of structure
+                if hasattr(obj, 'terms'):
+                    payload["arity"] = len(obj.terms)
+                else:
+                    payload["arity"] = 2 # binop
+            elif isinstance(obj, Lit):
+                payload["type"] = "Lit"
+                payload["var"] = obj.var.name
+            elif isinstance(obj, FixedCNF):
+                payload["type"] = "FixedCNF"
+                payload["vars"] = [v.name for v in obj.vars]
+                payload["arity"] = len(obj.vars)
+            
+            trace.events.append(TraceEvent(kind="IR_NODE", payload=payload))
     
     # Collect all base variable names
     base_vars: Set[str] = set()
@@ -160,7 +234,7 @@ def compile_ir(ir_obj: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardina
         elif isinstance(e, (And, Or, Imp, Iff, Xor)):
             for t in (e.terms if hasattr(e, 'terms') else [e.a, e.b]):
                 collect_vars(t)
-        elif isinstance(e, (AtLeast, AtMost, Exactly)):
+        elif isinstance(e, (AtLeast, AtMost, Exactly, FixedCNF)):
             for v in e.vars: base_vars.add(v.name)
  
     for obj in objs:
@@ -171,6 +245,8 @@ def compile_ir(ir_obj: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardina
     for obj in objs:
         if isinstance(obj, (AtLeast, AtMost, Exactly)):
             encode_cardinality(obj, ctx, recipe=recipe)
+        elif isinstance(obj, FixedCNF):
+            encode_fixed_cnf(obj, ctx)
         else:
             # Normalize boolean expression
             norm_expr = normalize_ir(obj)
@@ -179,5 +255,13 @@ def compile_ir(ir_obj: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardina
             
     # Deterministic clause ordering
     ctx.clauses.sort(key=lambda c: (len(c), sorted([abs(l) for l in c]), c))
+    
+    # Trace Logging (Post-compilation)
+    if trace is not None:
+        trace.events.append(TraceEvent(kind="CNF_EMIT", payload={
+            "clauses": len(ctx.clauses),
+            "vars": len(ctx.varmap),
+            "aux_vars": ctx.next_aux - 1 - len(ctx.varmap)
+        }))
     
     return ctx.clauses, ctx.varmap

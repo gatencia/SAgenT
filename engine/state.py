@@ -61,6 +61,10 @@ class AgentState:
     fuzz_log: List[Dict[str, Any]] = field(default_factory=list)
     compile_report: Optional[Dict[str, Any]] = None
     
+    # Denabase Integration
+    denabase_trace: Optional[Any] = None # Stores EncodingTrace object
+    retrieval_context: Optional[Dict[str, Any]] = None # Stores retrieval results
+    
     # Telemetry & Research Logs
     metrics: Dict[str, Any] = field(default_factory=lambda: {
         "syntax_errors": 0,

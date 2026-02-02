@@ -840,6 +840,13 @@ class SATManager:
         import time
         start_time = time.time()
         
+        # Denabase: Initialize Trace
+        try:
+            from Denabase.trace import EncodingTrace
+            state.denabase_trace = EncodingTrace(summary={"backend": state.active_ir_backend})
+        except ImportError:
+            pass # Denabase not installed
+        
         print(f"{DIM}SATManager: Solving with Backend ({state.active_ir_backend})...{RESET}")
         
         result = SatResult(status=SatStatus.UNKNOWN)
@@ -933,6 +940,25 @@ class SATManager:
                 self.decode_solution(state)
                 
                 if "metrics" in state.serialize(): state.metrics["iterations_to_valid"] += 1
+                
+                # Denabase: Store Success
+                if state.denabase_trace:
+                    try:
+                        from agent.denabase_bridge import DenabaseBridge
+                        bridge = DenabaseBridge.get_instance()
+                        # Create generic ID
+                        pid = f"auto_{uuid.uuid4().hex[:6]}"
+                        eid = bridge.create_solution_entry(
+                            family="agent_auto", 
+                            problem_id=pid, 
+                            cnf_clauses=safe_clauses,
+                            meta={"source": "agent", "backend": state.active_ir_backend}
+                        )
+                        bridge.attach_trace(eid, state.denabase_trace)
+                        print(f"{GREEN}Denabase: Stored solution trace as {pid} ({eid}){RESET}")
+                    except Exception as e:
+                        print(f"{YELLOW}Denabase Store Failed: {e}{RESET}")
+
                 return f"Solution Found (SAT). Time: {result.time_taken:.1f}ms. Domain decoding applied."
             
             else:

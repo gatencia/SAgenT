@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from Denabase.db.schema import EntryRecord, DBMeta, VerificationRecord, EntryMeta
 from Denabase.core.errors import DenabaseError
 from Denabase.core.cache import FileLock
+from Denabase.trace import EncodingTrace, save_trace_json, load_trace_json
 
 BS = 65536
 
@@ -35,7 +36,8 @@ class FileStore:
             "verification": self.root / "verification",
             "provenance": self.root / "provenance",
             "telemetry": self.root / "telemetry",
-            "indexes": self.root / "indexes"
+            "indexes": self.root / "indexes",
+            "traces": self.root / "traces"
         }
         
         # Create dirs
@@ -144,7 +146,8 @@ class FileStore:
                 "fingerprint": ("fingerprints", ".json"),
                 "verification": ("verification", ".json"),
                 "provenance": ("provenance", ".json"),
-                "telemetry": ("telemetry", ".json")
+                "telemetry": ("telemetry", ".json"),
+                "trace": ("traces", ".json")
             }
             
             paths_update = {}
@@ -161,7 +164,16 @@ class FileStore:
                         content = json.dumps(data.model_dump(), indent=2)
                         mode = "w"
                     elif isinstance(data, (dict, list)):
-                        content = json.dumps(data, indent=2)
+                        # Helper to serialize Pydantic models inside lists/dicts
+                        def default_serializer(obj):
+                            if hasattr(obj, "model_dump"):
+                                return obj.model_dump()
+                            # Handle set conversion too while we're at it
+                            if isinstance(obj, set):
+                                return list(obj)
+                            raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+                        content = json.dumps(data, indent=2, default=default_serializer)
                         mode = "w"
                     elif isinstance(data, str):
                         content = data
@@ -190,6 +202,24 @@ class FileStore:
             meta = self.get_meta()
             meta.counts["entries"] = meta.counts.get("entries", 0) + 1
             self.set_meta(meta)
+
+    def save_trace(self, entry_id: str, trace: EncodingTrace) -> str:
+        """Saves a trace and returns relative path."""
+        with self._lock():
+            fname = f"{entry_id}.json"
+            fpath = self.dirs["traces"] / fname
+            
+            # Use trace module helper
+            save_trace_json(trace, fpath)
+            
+            return f"traces/{fname}"
+
+    def load_trace(self, entry_id: str) -> Optional[EncodingTrace]:
+        """Loads a trace for an entry."""
+        fpath = self.dirs["traces"] / f"{entry_id}.json"
+        if not fpath.exists():
+            return None
+        return load_trace_json(fpath)
 
     def update_indexes(self, entry_id: str, signature_key: str, profile_tokens: List[str]):
         """Updates the inverted indexes with a new entry."""

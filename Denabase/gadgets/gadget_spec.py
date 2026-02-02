@@ -9,7 +9,7 @@ class GadgetUnitTest(BaseModel):
     params: Dict[str, Any]
     expected_sat: bool
 
-class GadgetSpec(ABC):
+class GadgetSpec(BaseModel, ABC):
     """Abstract base class for reusable constraint gadgets."""
     
     name: str
@@ -18,6 +18,7 @@ class GadgetSpec(ABC):
     description: str
     params_schema: Dict[str, Any] = Field(default_factory=dict)
     unit_tests: List[GadgetUnitTest] = Field(default_factory=list)
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
     def validate_params(self, params: Dict[str, Any]):
         """Simple validation against expected keys/types."""
@@ -35,17 +36,17 @@ class GadgetSpec(ABC):
 # --- Built-in Gadgets ---
 
 class ExactlyOneGadget(GadgetSpec):
-    name = "exactly_one"
-    family = "cardinality"
-    description = "Enforces exactly one of the given variables is true."
-    params_schema = {
+    name: str = "exactly_one"
+    family: str = "cardinality"
+    description: str = "Enforces exactly one of the given variables is true."
+    params_schema: Dict[str, Any] = {
         "type": "object",
         "properties": {
             "vars": {"type": "array", "items": {"type": "string"}}
         },
         "required": ["vars"]
     }
-    unit_tests = [
+    unit_tests: List[GadgetUnitTest] = [
         GadgetUnitTest(params={"vars": ["a", "b"]}, expected_sat=True),
         # Testing specific models requires more than just expected_sat (needs decoder), 
         # but for simple self-test we rely on verifier to check ANY SAT.
@@ -61,17 +62,17 @@ class ExactlyOneGadget(GadgetSpec):
         return Exactly(k=1, vars=refs)
 
 class AtMostOneGadget(GadgetSpec):
-    name = "at_most_one"
-    family = "cardinality"
-    description = "Enforces at most one of the given variables is true."
-    params_schema = {
+    name: str = "at_most_one"
+    family: str = "cardinality"
+    description: str = "Enforces at most one of the given variables is true."
+    params_schema: Dict[str, Any] = {
         "type": "object",
         "properties": {
             "vars": {"type": "array", "items": {"type": "string"}}
         },
         "required": ["vars"]
     }
-    unit_tests = [
+    unit_tests: List[GadgetUnitTest] = [
         GadgetUnitTest(params={"vars": ["a", "b", "c"]}, expected_sat=True)
     ]
 
@@ -82,10 +83,10 @@ class AtMostOneGadget(GadgetSpec):
         return AtMost(k=1, vars=refs)
 
 class KColoringGadget(GadgetSpec):
-    name = "k_coloring"
-    family = "graph"
-    description = "K-Coloring constraint for a graph."
-    params_schema = {
+    name: str = "k_coloring"
+    family: str = "graph"
+    description: str = "K-Coloring constraint for a graph."
+    params_schema: Dict[str, Any] = {
         "type": "object",
         "properties": {
             "n": {"type": "integer"},
@@ -96,7 +97,7 @@ class KColoringGadget(GadgetSpec):
     }
     # Triangle K=2 -> UNSAT
     # Triangle K=3 -> SAT
-    unit_tests = [
+    unit_tests: List[GadgetUnitTest] = [
         GadgetUnitTest(
             params={"n": 3, "k": 2, "edges": [[0, 1], [1, 2], [2, 0]]}, 
             expected_sat=False

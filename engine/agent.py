@@ -37,10 +37,30 @@ class ReActAgent:
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "system.txt")
         with open(prompt_path, "r") as f:
             self.system_prompt = f.read()
+            
+        # Denabase Bridge
+        try:
+            from agent.denabase_bridge import DenabaseBridge
+            self.bridge = DenabaseBridge.get_instance(db_path="denabase_db") 
+        except ImportError:
+            self.bridge = None
+            print(f"{YELLOW}Warning: Denabase not found/active.{RESET}")
 
     def run(self, goal: str) -> AgentState:
         state = AgentState()
         state.active_ir_backend = self.config.backend 
+        
+        # Early Retrieval
+        if self.bridge:
+            print(f"{DIM}Retrieving priors for goal...{RESET}")
+            try:
+                priors = self.bridge.retrieve_priors(goal)
+                state.retrieval_context = priors
+                if priors['analogs']:
+                    print(f"{GREEN}Found {len(priors['analogs'])} analogs.{RESET}")
+            except Exception as e:
+                print(f"{YELLOW}Retrieval failed: {e}{RESET}")
+                
         while not state.finished and state.step_count < self.max_steps:
             state.step_count += 1
             
@@ -249,6 +269,19 @@ class ReActAgent:
         except: pass
         
         prompt += f"SCHEMA: {self.sat.get_schema(state)}\n"
+        
+        # --- DENABASE RETRIEVAL ---
+        if state.retrieval_context:
+            rc = state.retrieval_context
+            prompt += "\n" + "="*40 + "\n"
+            prompt += "[RETRIEVAL SUGGESTIONS]\n"
+            if rc.get("analogs"):
+                 prompt += "Analogs (Similar Solved Problems):\n"
+                 for a in rc["analogs"]:
+                     prompt += f"- {a['problem_id']} ({a['family']}): {a['summary'][:100]}...\n"
+            if rc.get("suggested_gadgets"):
+                 prompt += f"Available Macros/Gadgets: {rc['suggested_gadgets']}\n"
+                 prompt += "Strategy Tip: Use these high-level gadgets via 'ADD_MODEL_CONSTRAINTS' where applicable instead of raw logic.\n"
         
         # --- CONTEXT BOX (User Requested) ---
         prompt += "\n" + "="*40 + "\n"
