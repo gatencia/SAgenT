@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from typing import List, Tuple, Any, Optional, Dict, Union
 from sklearn.neighbors import NearestNeighbors
+import hashlib
+from Denabase.core.cache import DiskCache
 
 # Try importing FAISS
 try:
@@ -17,12 +19,16 @@ class VectorIndex:
     Vector index for similarity search.
     Uses FAISS if available, otherwise falls back to sklearn NearestNeighbors.
     """
-    def __init__(self, metric: str = 'cosine'):
+    def __init__(self, metric: str = 'cosine', cache_dir: Optional[Union[str, Path]] = None):
         self.metric = metric
         self.backend = "faiss" if HAS_FAISS else "sklearn"
         self.index = None
         self.ids: List[Any] = []
         self.vectors: Optional[np.ndarray] = None # Used for sklearn/persistence
+        
+        self.cache = None
+        if cache_dir:
+            self.cache = DiskCache(cache_dir)
 
     def add(self, vectors: List[List[float]], ids: List[Any]):
         """Adds vectors and their corresponding IDs to the index."""
@@ -39,6 +45,11 @@ class VectorIndex:
             
         # Rebuild index (simple approach for now)
         self._build_index()
+        # Invalidate cache on modification? 
+        # Or include index state hash in key?
+        # Simple invalidation:
+        if self.cache:
+            self.cache.clear()
 
     def _build_index(self):
         if self.vectors is None or len(self.vectors) == 0:
@@ -76,8 +87,25 @@ class VectorIndex:
         if k == 0:
             return []
             
+        # Cache Check
+        cache_key = ""
+        if self.cache:
+            # Key depends on vector + k + index_state
+            # Index state approximated by len(ids) or hash of IDs?
+            # Len is fast.
+            # Vector hash: round floats to avoid jitter
+            v_tuple = tuple(np.round(vector, 6))
+            state_key = f"{len(self.ids)}_{self.backend}_{self.metric}"
+            raw_key = f"{state_key}_{hash(v_tuple)}_{k}"
+            cache_key = hashlib.sha256(raw_key.encode()).hexdigest()
+            
+            cached = self.cache.get(cache_key)
+            if cached:
+                return cached  # List[Tuple] loaded from JSON (tuples become lists)
+
         q = np.array([vector]).astype('float32')
         
+        results = []
         if self.backend == "faiss":
              if self.metric == 'cosine':
                  faiss.normalize_L2(q)
@@ -85,18 +113,22 @@ class VectorIndex:
              distances, indices = self.index.search(q, k)
              # FAISS IP returns cosine similarity directly
              # FAISS L2 returns squared euclidean distance
-             return [(self.ids[idx], float(dist)) for dist, idx in zip(distances[0], indices[0]) if idx != -1]
+             results = [(self.ids[idx], float(dist)) for dist, idx in zip(distances[0], indices[0]) if idx != -1]
              
         else:
             # Sklearn
             distances, indices = self.index.kneighbors(q, n_neighbors=k)
             # Sklearn cosine metric returns distance = 1 - cos_sim
             # We convert back to similarity for consistency
-            results = []
             for dist, idx in zip(distances[0], indices[0]):
                 sim = 1.0 - dist if self.metric == 'cosine' else dist
                 results.append((self.ids[idx], float(sim)))
-            return results
+                
+        # Cache Set
+        if self.cache:
+            self.cache.set(cache_key, results)
+            
+        return results
 
     def save(self, path: Union[str, Path]):
         """Persists index structure and data."""

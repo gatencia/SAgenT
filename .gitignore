@@ -8,9 +8,20 @@ __pycache__/
 # System
 .DS_Store
 
+# sat bench ds
+data/
+Denabase/
+.hypothesis/
+
 # Benchmark Artifacts
 bench/runs/
-
+data/
 *.mzn
 *.fzn
+*.ozn
+
+# Data and Databases
+data/satbench/
+my_database/
+ salmon
 *.ozn

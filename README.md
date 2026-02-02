@@ -130,3 +130,79 @@ The repo includes a built-in **Fuzzing Engine** to prevent "modeling errors" fro
 
 > [!IMPORTANT]
 > **Deterministic Phasing**: The agent CANNOT skip to `SOLVE` without passing through `VARIABLES` and `CONSTRAINTS`. The `SATManager` will reject out-of-order actions.
+
+
+
+# Denabase
+
+Denabase is a robust Python library for building, indexing, and querying a verified SAT encoding library. It features CNF fingerprinting, similarity retrieval, and metamorphic verification.
+
+## Installation
+
+To install the library in editable mode:
+
+```bash
+pip install -e .
+```
+
+To install with testing dependencies (required for running tests):
+
+```bash
+pip install -e '.[test]'
+```
+
+## Quickstart
+
+The Denabase CLI provides commands to initialize a database, ingest CNF/IR problems, and query for similar entries.
+
+### 1. Initialize a Database
+Initialize a new database directory structure.
+```bash
+python Denabase/denabase_cli.py init ./my_denabase
+```
+
+### 2. Add a CNF Entry
+Ingest a raw DIMACS CNF file. Use `--verify` to enforce strict verification checks (metamorphic testing) before ingestion.
+```bash
+# Standard ingestion
+python Denabase/denabase_cli.py add-cnf ./my_denabase problem.cnf --family "crypto" --problem-id "sha256-preimage"
+
+# Verified ingestion (computationally expensive, guarantees correctness)
+python Denabase/denabase_cli.py add-cnf ./my_denabase problem.cnf --family "crypto" --problem-id "sha256-preimage" --verify
+```
+
+### 3. Add an IR Entry
+Ingest an Intermediate Representation (JSON) file.
+```bash
+# Standard ingestion
+python Denabase/denabase_cli.py add-ir ./my_denabase problem_ir.json --family "scheduling" --problem-id "job-shop-01"
+
+# Verified ingestion
+python Denabase/denabase_cli.py add-ir ./my_denabase problem_ir.json --family "scheduling" --problem-id "job-shop-01" --verify
+```
+
+### 4. Query Similar Entries
+Find similar entries based on structural fingerprints and profile embeddings.
+```bash
+# Query with a CNF file
+python Denabase/denabase_cli.py query ./my_denabase query.cnf --topk 5
+
+# Query with an IR file
+python Denabase/denabase_cli.py query ./my_denabase query_ir.json --topk 5
+```
+
+## Running Tests
+
+Ensure you have installed the test dependencies:
+```bash
+pip install -e '.[test]'
+```
+
+Run the test suite using `pytest`:
+```bash
+pytest
+```
+Or for less verbose output:
+```bash
+pytest -q
+```

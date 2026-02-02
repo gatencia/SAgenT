@@ -1,1 +1,5 @@
 python-sat>=0.1.7.dev12
+pydantic>=2.0
+scikit-learn
+joblib
+hypothesis

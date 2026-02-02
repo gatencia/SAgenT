@@ -1,7 +1,6 @@
-import pytest
+from Denabase.selection.encoding_selector import EncodingSelector
+from Denabase.selection.solver_selector import SolverSelector
 from Denabase.profile.profile_types import ConstraintProfile
-from Denabase.select.encoding_selector import EncodingSelector
-from Denabase.select.solver_selector import SolverSelector
 
 def test_encoding_selection_heuristics():
     selector = EncodingSelector()

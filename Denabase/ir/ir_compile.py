@@ -101,25 +101,54 @@ def encode_at_most(k: int, x: List[int], ctx: CompilationContext):
     # Final overflow check for the n-th variable
     ctx.add_clause([-x[n-1], -s[(n-2, k)]])
 
-def encode_cardinality(card: Cardinality, ctx: CompilationContext):
+from itertools import combinations
+from Denabase.selection.encoding_selector import EncodingRecipe
+
+def encode_at_most_pairwise(x: List[int], ctx: CompilationContext):
+    """
+    Encodes AtMost(1, x) using Pairwise encoding.
+    """
+    for l1, l2 in combinations(x, 2):
+        ctx.add_clause([-l1, -l2])
+
+def encode_cardinality(card: Cardinality, ctx: CompilationContext, recipe: EncodingRecipe = None):
     """Encodes cardinality constraints."""
     x = [ctx.varmap[v.name] for v in card.vars]
     n = len(x)
     k = card.k
-
+    
+    # Defaults
+    method = recipe.cardinality_encoding if recipe else "sequential"
+    
     if isinstance(card, AtMost):
-        encode_at_most(k, x, ctx)
+        if k == 1 and method == "pairwise":
+            encode_at_most_pairwise(x, ctx)
+        else:
+            # Fallback to sequential for k > 1 or explicit sequential
+            encode_at_most(k, x, ctx)
     elif isinstance(card, AtLeast):
         # AtLeast(k, x) is AtMost(n-k, !x)
         not_x = [-lit for lit in x]
-        encode_at_most(n - k, not_x, ctx)
+        if n - k == 1 and method == "pairwise":
+            encode_at_most_pairwise(not_x, ctx)
+        else:
+            encode_at_most(n - k, not_x, ctx)
     elif isinstance(card, Exactly):
         # Exactly(k, x) is AtMost(k, x) AND AtLeast(k, x)
-        encode_at_most(k, x, ctx)
+        # Handle first part
+        if k == 1 and method == "pairwise":
+            encode_at_most_pairwise(x, ctx)
+        else:
+            encode_at_most(k, x, ctx)
+            
+        # Handle second part (AtLeast k) -> AtMost(n-k, !x)
         not_x = [-lit for lit in x]
-        encode_at_most(n - k, not_x, ctx)
+        if n - k == 1 and method == "pairwise":
+            encode_at_most_pairwise(not_x, ctx)
+        else:
+            encode_at_most(n - k, not_x, ctx)
 
-def compile_ir(ir_obj: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardinality]]]) -> Tuple[CNFEncoding, Dict[str, int]]:
+def compile_ir(ir_obj: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardinality]]], recipe: EncodingRecipe = None) -> Tuple[CNFEncoding, Dict[str, int]]:
     """Compiles IR to CNF."""
     objs = ir_obj if isinstance(ir_obj, list) else [ir_obj]
     
@@ -133,7 +162,7 @@ def compile_ir(ir_obj: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardina
                 collect_vars(t)
         elif isinstance(e, (AtLeast, AtMost, Exactly)):
             for v in e.vars: base_vars.add(v.name)
-
+ 
     for obj in objs:
         collect_vars(obj)
     
@@ -141,7 +170,7 @@ def compile_ir(ir_obj: Union[BoolExpr, Cardinality, List[Union[BoolExpr, Cardina
     
     for obj in objs:
         if isinstance(obj, (AtLeast, AtMost, Exactly)):
-            encode_cardinality(obj, ctx)
+            encode_cardinality(obj, ctx, recipe=recipe)
         else:
             # Normalize boolean expression
             norm_expr = normalize_ir(obj)

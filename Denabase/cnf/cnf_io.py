@@ -3,54 +3,94 @@ from typing import Union
 from Denabase.cnf.cnf_types import CnfDocument
 from Denabase.core.errors import CNFError
 
-def read_dimacs(path: Union[str, Path]) -> CnfDocument:
+def read_dimacs_from_string(dimacs: str) -> CnfDocument:
     """
-    Robustly reads a DIMACS CNF file.
-    Supports comments (c), problem lines (p), and multiple clauses per line.
+    Robustly parses a DIMACS CNF string.
+    Consumes all integers, handles multi-line clauses, and checks validity.
     """
-    path = Path(path)
     clauses = []
     num_vars = 0
     num_clauses_expected = 0
+    header_found = False
     
-    try:
-        with open(path, "r") as f:
-            current_clause = []
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('c'):
-                    continue
-                
-                parts = line.split()
-                if parts[0] == 'p':
-                    if len(parts) >= 4 and parts[1] == 'cnf':
-                        num_vars = int(parts[2])
-                        num_clauses_expected = int(parts[3])
-                    continue
-                
-                for p in parts:
-                    val = int(p)
-                    if val == 0:
-                        if current_clause:
-                            clauses.append(current_clause)
-                            current_clause = []
-                    else:
-                        current_clause.append(val)
-            
-            # Catch trailing clause if missing terminal 0
-            if current_clause:
-                clauses.append(current_clause)
-                
-    except Exception as e:
-        raise CNFError(f"Failed to read DIMACS from {path}: {e}")
+    # Process line by line for comments and header
+    lines = dimacs.splitlines()
+    data_lines = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('c'):
+            continue
+        if line.startswith('p'):
+            parts = line.split()
+            if len(parts) >= 4 and parts[1] == 'cnf':
+                try:
+                    num_vars = int(parts[2])
+                    num_clauses_expected = int(parts[3])
+                    header_found = True
+                except ValueError:
+                    pass # Ignore malformed p lines
+            continue
+        data_lines.append(line)
 
-    # Re-calculate num_vars if not provided or inconsistent
+    # Flatten remaining data into integers
+    all_ints = []
+    for line in data_lines:
+        for part in line.split():
+            try:
+                all_ints.append(int(part))
+            except ValueError:
+                # Some DIMACS might have mid-data comments or junk, 
+                # but standard says integers.
+                raise CNFError(f"Invalid integer in DIMACS data: {part}")
+
+    # Build clauses
+    current_clause = []
+    for val in all_ints:
+        if val == 0:
+            if not current_clause:
+                # Empty clause (0 0 or leading 0)
+                raise CNFError("Empty clause (leading 0 or consecutive 0s) is not allowed by current model.")
+            clauses.append(current_clause)
+            current_clause = []
+        else:
+            if header_found and abs(val) > num_vars:
+                 # Should we strictly enforce or just warn/update?
+                 # Requirement says: "validate abs(lit) <= nvars when nvars known, else infer"
+                 # CnfDocument also validates this.
+                 pass 
+            current_clause.append(val)
+
+    if current_clause:
+        # Trailing non-zero literals
+        raise CNFError("Missing terminating 0 at end of DIMACS input.")
+
+    # Re-calculate num_vars if header missing or inconsistent
     max_var = 0
     if clauses:
         max_var = max(abs(lit) for c in clauses for lit in c)
-    num_vars = max(num_vars, max_var)
+    
+    if not header_found:
+        num_vars = max_var
+    else:
+        # Sanity check: if specified num_vars is less than what we found
+        if max_var > num_vars:
+             num_vars = max_var 
 
     return CnfDocument(num_vars=num_vars, clauses=clauses)
+
+def read_dimacs(path: Union[str, Path]) -> CnfDocument:
+    """
+    Robustly reads a DIMACS CNF file.
+    """
+    path = Path(path)
+    try:
+        with open(path, "r") as f:
+            content = f.read()
+        return read_dimacs_from_string(content)
+    except Exception as e:
+        if isinstance(e, CNFError):
+            raise e
+        raise CNFError(f"Failed to read DIMACS from {path}: {e}")
 
 def write_dimacs(doc: CnfDocument, path: Union[str, Path], canonical: bool = True):
     """

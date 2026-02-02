@@ -1,6 +1,6 @@
 [project]
 name = "Denabase"
-version = "0.1.0"
+version = "0.2.0"
 description = "A production-quality library for building and querying a verified SAT encoding library."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -11,7 +11,13 @@ dependencies = [
     "python-sat[pblib,aiger]",
     "scikit-learn",
     "joblib",
+    "datasets",
+    "tqdm",
+    "faiss-cpu",
 ]
+
+[tool.setuptools]
+packages = ["Denabase", "engine", "tools"]
 
 [project.optional-dependencies]
 test = [
@@ -24,5 +30,5 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
-testpaths = ["Denabase/tests"]
+testpaths = ["tests"]
 python_files = "test_*.py"

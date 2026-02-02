@@ -28,19 +28,20 @@ class CnfVerifier:
     def __init__(self, config: VerificationConfig):
         self.config = config
 
-    def _solve(self, doc: CnfDocument) -> Tuple[bool, Optional[List[int]], Optional[int]]:
+    def _solve(self, doc: CnfDocument, assumptions: List[int] = []) -> Tuple[bool, Optional[List[int]], Optional[int]]:
         """
         Solves CNF. Returns (is_sat, model, core_size).
         """
         with Solver(name=self.config.solver_name, bootstrap_with=doc.clauses) as solver:
-            is_sat = solver.solve()
+            is_sat = solver.solve(assumptions=assumptions)
             model = solver.get_model() if is_sat else None
             return is_sat, model, None 
 
     def verify(self, 
                doc: CnfDocument, 
                decoder: Optional[Callable[[List[int]], Any]] = None,
-               checker: Optional[Callable[[Any], bool]] = None) -> VerificationResult:
+               checker: Optional[Callable[[Any], bool]] = None,
+               assumptions: List[int] = []) -> VerificationResult:
         """
         Verifies a CNF document.
         """
@@ -57,7 +58,7 @@ class CnfVerifier:
                  result.stats["duration"] = time.time() - start_time
                  return result
 
-            is_sat, model, core_len = self._solve(doc)
+            is_sat, model, core_len = self._solve(doc, assumptions=assumptions)
             result.is_satisfiable = is_sat
             result.core_size = core_len
             
