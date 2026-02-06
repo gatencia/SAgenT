@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/cnf/cnf_stats.py
-# hypothesis_version: 6.151.4
-
-[0.0, 0.5, 'clause_len', 'gini', 'max', 'mean', 'min', 'n_clauses', 'n_vars', 'overflow', 'polarity_ratio', 'var_occurrence']

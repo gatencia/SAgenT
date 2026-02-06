@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/ir/__init__.py
-# hypothesis_version: 6.151.4
-
-['And', 'AtLeast', 'AtMost', 'Exactly', 'IR', 'Iff', 'Imp', 'Lit', 'Not', 'Or', 'VarRef', 'Xor', 'compile_ir', 'normalize_ir']

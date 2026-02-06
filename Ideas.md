@@ -2,6 +2,8 @@ this is just a scrap of ideas I could potentially implement in the future.
 
 
 ####################################################################################
+DONE
+
 Several Options in hwo to make the agent actually learn important things. 
 
 1. Using dreamcoder and a learning library to learn abstractions onhow to solve these problems. I would use LILO (Library Induction from Language Observations). 
@@ -79,8 +81,18 @@ Type of graphs and logs I should consider getting
 
 ####################################################################################
 
-Analogical reasoning as inspiration for Solutions.  
+Training an RL to learn the most optimized CNF representations. 
 
 
 ####################################################################################
 Figuring out when to use what IR. Similar to when an LLM decides when to do deepresearch, thinking or a flash answer, we should figure out how to structuer the reasoning to use the best IR for the current step of the problem solving process. 
+
+
+####################################################################################
+Three changes to make denabase much more robust: 
+
+1) Encoding search engine (beam/MCTS over encoding decisions with solver-in-the-loop scoring). Technically, you treat “produce a SAT encoding” as a combinatorial search problem over a space of encoding choices rather than a single LLM output. The search state is a partially constructed encoding (typically an IR + a growing CNF) plus a record of which gadget templates/aux-variable schemes were chosen. Actions are discrete modeling choices: select an encoding for a constraint family (e.g., pairwise AMO vs sequential counter vs commander), choose variable grouping/ordering, introduce symmetry-breaking constraints, select a decomposition of global constraints into local ones, etc. You run a search algorithm (beam search, MCTS, or iterative deepening) that expands multiple candidate encodings in parallel. Each candidate is evaluated using fast signals: bounded semantic checks (toy instances or metamorphic invariants), cheap structural features (var/cls counts, clause-length distribution, polarity), and short solver probe runs (e.g., Kissat for 50–300ms, logging conflicts/propagations, learnt clause stats). The search keeps the top candidates and continues refinement until a budget is exhausted, then commits to the best-scoring encoding. This is analogous to program synthesis with learned heuristics: Denabase provides the prior (retrieved motifs/gadgets); the search provides systematic exploration to discover “representation breakthroughs” that make the solver’s job easier.
+
+2) CEGIS-style repair loop for reductions (counterexample- and unsat-core-guided patch synthesis). Here the system turns encoding correctness into an iterative constraint-learning procedure. After compiling an encoding, you check it against an oracle: SAT-Bench labels, known satisfiable assignments, or equivalence-to-spec on toy instances. If the result is wrong, you extract a counterexample witness from the solver: (a) if your CNF is SAT when it should be UNSAT, you get a satisfying assignment (model) that violates the intended semantics; (b) if your CNF is UNSAT when it should be SAT (or conflicts with known feasible assignments), you use an unsat core or proof trace to identify which subset of clauses forces contradiction. You then translate this witness into a repair objective: forbid the spurious model by adding a separating constraint (a clause or a gadget instantiation), or relax/replace the over-constraining clauses indicated by the core. The patch search is guided by a library of candidate fixes (gadgets) and by structural diagnostics (which constraint family is missing, which variables participate in the witness). You prefer minimal patches via an optimization criterion (fewest clauses/aux vars, minimal gadget additions) and you re-verify after each patch. Over time, you log “failure→patch” pairs to Denabase, which becomes training data for better repair proposals and for prioritizing which gadgets to try first.
+
+3) Proof-carrying / metamorphic verification as a hard admission gate (preventing library poisoning). This is a verification pipeline that ensures any stored encoding (and especially any induced macro-gadget) satisfies strong correctness criteria before it enters Denabase as reusable knowledge. At minimum, you implement semantic self-verification using bounded instances: compile the same high-level spec (IR) and compare behavior across small parameter settings, checking satisfiability and (when applicable) solution projections onto original variables while quantifying aux-variable existential semantics (equisatisfiability rather than equivalence). On top of that, you add metamorphic tests—transformations that should preserve satisfiability (variable renaming, permutation of symmetric entities, reindexing grid coordinates, swapping robot labels) and monotonic transformations that should have predictable effects (tightening a bound should not create new satisfying assignments; adding redundant clauses should not flip SAT→UNSAT unless they’re inconsistent). For UNSAT claims, you can optionally store proof artifacts (e.g., DRAT/LRAT from modern solvers) as a certificate; for SAT claims, store a model (or a model projected onto problem variables) as a witness. The key architectural point is that verification is not just for runtime confidence—it’s a data hygiene filter: only encodings/gadgets that pass these checks are admitted into Denabase and into versioned gadget packs. This prevents the DreamCoder/Stitch “sleep” loop from learning and amplifying wrong abstractions, and it makes subsequent retrieval and reuse safe.

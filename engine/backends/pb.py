@@ -230,7 +230,7 @@ You are using the Pseudo-Boolean backend.
             if hasattr(state, "denabase_trace") and state.denabase_trace is not None:
                 # Capture sketch step
                 try:
-                    from Denabase.trace import TraceEvent
+                    from Denabase.Denabase.trace import TraceEvent
                     # Normalize Payload
                     # 1. Type
                     t_type = k

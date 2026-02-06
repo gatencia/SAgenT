@@ -12,7 +12,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from Denabase.denabase_cli import handle_ingest_satbench
+from Denabase.Denabase.denabase_cli import handle_ingest_satbench
 
 def main():
     parser = argparse.ArgumentParser(description="Ingest SAT-Bench data into Denabase.")

@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/config.py
-# hypothesis_version: 6.151.4
-
-['IRConfig', 'IR_BACKEND', 'IR_CONFIG_PATH', 'backend', 'backend_params', 'cnf', 'pb', 'r']

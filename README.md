@@ -11,7 +11,7 @@ If there is any info missing in the README please let me know. Cheers, Guillaume
 
 
 
-LLM-SAT is a **ReAct-based Agentic Framework** that bridges the gap between high-level natural language reasoning and low-level SAT/Constraint solving. It uses Large Language Models (LLMs) to formulate problems and rigorous solvers (PySAT, MiniZinc) to solve them.
+LLM-SAT is a **ReAct-based Agentic Framework** that bridges the gap between high-level natural language reasoning and low-level SAT/Constraint solving. It uses Large Language Models (LLMs) to encode complexe SAT problems and uses rigorous solvers (PySAT, MiniZinc) to solve them.
 
 ---
 

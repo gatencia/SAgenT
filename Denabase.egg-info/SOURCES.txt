@@ -1,7 +1,6 @@
 README.md
 pyproject.toml
 Denabase/__init__.py
-Denabase/denabase_cli.py
 Denabase.egg-info/PKG-INFO
 Denabase.egg-info/SOURCES.txt
 Denabase.egg-info/dependency_links.txt
@@ -13,6 +12,7 @@ engine/agent.py
 engine/booleanizer.py
 engine/config.py
 engine/debug_harness.py
+engine/llm_provider.py
 engine/sat_manager.py
 engine/state.py
 engine/vars.py

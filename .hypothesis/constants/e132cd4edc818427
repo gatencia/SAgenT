@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/actions.py
-# hypothesis_version: 6.151.4
-
-['ADD_CONSTRAINTS', 'ADD_MINIZINC_CODE', 'ADVANCE_PHASE', 'DECODE_SOLUTION', 'DEFINE_VARIABLES', 'FINISH', 'FUZZ_CONSTRAINTS', 'LIST_IR_SCHEMA', 'READ_MODEL_FILE', 'REFINE_MODEL', 'SOLVE', 'TEST_CONSTRAINT', 'UPDATE_MODEL_FILE', 'UPDATE_PLAN']

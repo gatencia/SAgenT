@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/backends/minizinc.py
-# hypothesis_version: 6.151.4
-
-[' \\/ ', ',', '-', '-~', 'List[Dict]', 'List[List[str]]', 'List[str]', '\\[(.*)\\],\\s*\\[(.*)\\]', '_reif', 'a', 'alldifferent_onehot', 'args', 'at_least_k', 'at_most_k', 'b', 'bool', 'bool_clause', 'bool_not', 'chuffed', 'clause', 'enc', 'eq', 'exactly_k', 'exactly_one', 'group', 'groups', 'implies', 'int', 'int_lin_eq', 'int_lin_eq_reif', 'int_lin_le', 'int_lin_le_reif', 'k', 'linear_eq', 'linear_leq', 'literals', 'memory', 'memory/cache/mzn', 'minizinc', 'minizinc_code', 'mzn', 'mzn_constraints', 'name', 'parameters', 'r', 'rb', 'rhs', 'solve satisfy;', 'str', 'terms', 'type', 'vars', 'w', 'wb', '~']

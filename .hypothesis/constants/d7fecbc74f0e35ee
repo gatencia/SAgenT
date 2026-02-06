@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/backends/pb.py
-# hypothesis_version: 6.151.4
-
-['!', "'vars' must be list", '-', '-~', '-~!', '<=', '=', 'List[str]', 'a', 'at_least_k', 'at_most_k', 'b', 'clause', 'clauses', 'cnf_clauses', 'coef', 'connected_8', 'enc', 'exactly_k', 'exactly_one', 'implies', 'int', 'k', 'linear_eq', 'linear_leq', 'literals', 'parameters', 'pb', 'pysat', 'registry', 'rhs', 'str', 'terms', 'var', 'vars', '~']

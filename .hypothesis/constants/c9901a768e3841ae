@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/engine/booleanizer.py
-# hypothesis_version: 6.151.4
-
-['bool', 'domain', 'fzn', 'int', 'int_rank', 'literal', 'mzn', 'name', 'rank_literals', 'type', 'value']

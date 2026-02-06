@@ -9,11 +9,11 @@ from typing import List, Dict, Any, Optional
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from Denabase.db.denabase import DenaBase
-from Denabase.ir.ir_types import VarRef, Exactly, AtMost
-from Denabase.ingest.satbench import load_manifest, ingest_manifest
-from Denabase.cnf.cnf_io import load_cnf
-from Denabase.core.errors import CNFError
+from Denabase.Denabase.db.denabase import DenaBase
+from Denabase.Denabase.ir.ir_types import VarRef, Exactly, AtMost
+from Denabase.Denabase.ingest.satbench import load_manifest, ingest_manifest
+from Denabase.Denabase.cnf.cnf_io import load_cnf
+from Denabase.Denabase.core.errors import CNFError
 
 def main(args_list: Optional[List[str]] = None):
     parser = argparse.ArgumentParser(description="Populate Denabase with seeds, manifests, and file scans.")

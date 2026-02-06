@@ -4,8 +4,8 @@ import json
 import random
 from pathlib import Path
 from tqdm import tqdm
-from Denabase.db.denabase import DenaBase
-from Denabase.ingest.satbench import load_manifest
+from Denabase.Denabase.db.denabase import DenaBase
+from Denabase.Denabase.ingest.satbench import load_manifest
 
 def main():
     parser = argparse.ArgumentParser(description="Fast SAT-Bench ingestion for Denabase.")
@@ -44,7 +44,7 @@ def main():
     print(f"Verification: {len(to_verify)} items selected for spot-check.")
 
     # 3. Bulk Ingest
-    from Denabase.cnf.cnf_types import CnfDocument
+    from Denabase.Denabase.cnf.cnf_types import CnfDocument
     db = DenaBase.open(args.db)
     
     ok, fail = 0, 0

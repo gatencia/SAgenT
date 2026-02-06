@@ -842,7 +842,7 @@ class SATManager:
         
         # Denabase: Initialize Trace
         try:
-            from Denabase.trace import EncodingTrace
+            from Denabase.Denabase.trace import EncodingTrace
             state.denabase_trace = EncodingTrace(summary={"backend": state.active_ir_backend})
         except ImportError:
             pass # Denabase not installed
@@ -944,7 +944,7 @@ class SATManager:
                 # Denabase: Store Success
                 if state.denabase_trace:
                     try:
-                        from agent.denabase_bridge import DenabaseBridge
+                        from Denabase.agent.denabase_bridge import DenabaseBridge
                         bridge = DenabaseBridge.get_instance()
                         # Create generic ID
                         pid = f"auto_{uuid.uuid4().hex[:6]}"

@@ -4,13 +4,18 @@
 # Python compilation
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # System
 .DS_Store
 
 # sat bench ds
 data/
-Denabase/
+
+Denabase/experiment_db
+Denabase/my_database
+Denabase/data/satbench
+Denabase/.hypothesis
 .hypothesis/
 
 # Benchmark Artifacts
@@ -19,6 +24,9 @@ data/
 *.mzn
 *.fzn
 *.ozn
+output.txt
+ideas.md 
+
 
 # Data and Databases
 data/satbench/

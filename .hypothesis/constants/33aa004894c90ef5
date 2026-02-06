@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/verify/__init__.py
-# hypothesis_version: 6.151.4
-
-['CnfVerifier', 'MetamorphicSuite', 'VerificationConfig', 'VerificationResult', 'generate_random_3sat', 'generate_unsat_core', 'permute_clauses', 'permute_literals', 'rename_vars']

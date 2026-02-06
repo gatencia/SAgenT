@@ -1,0 +1,10 @@
+numpy
+networkx
+pydantic>=2.0
+python-sat[aiger,pblib]
+scikit-learn
+joblib
+
+[test]
+pytest
+hypothesis

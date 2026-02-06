@@ -40,7 +40,7 @@ class ReActAgent:
             
         # Denabase Bridge
         try:
-            from agent.denabase_bridge import DenabaseBridge
+            from Denabase.agent.denabase_bridge import DenabaseBridge
             self.bridge = DenabaseBridge.get_instance(db_path="denabase_db") 
         except ImportError:
             self.bridge = None

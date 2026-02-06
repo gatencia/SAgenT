@@ -1,4 +1,0 @@
-# file: /Users/guillaumeatencia/Documents/Projects/Projects 2026/LLM sat/Denabase/profile/profile_types.py
-# hypothesis_version: 6.151.4
-
-[0.0, 1.0, '1.0', '_k', '_size', 'and', 'at_least', 'at_most', 'exactly', 'iff', 'imp', 'lit', 'n_clauses', 'n_vars', 'not', 'or', 'utf-8', 'xor']
