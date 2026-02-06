@@ -11,7 +11,6 @@ __pycache__/
 
 # sat bench ds
 data/
-
 Denabase/experiment_db
 Denabase/my_database
 Denabase/data/satbench
@@ -33,3 +32,5 @@ data/satbench/
 my_database/
  salmon
 *.ozn
+memory/
+output.txt
