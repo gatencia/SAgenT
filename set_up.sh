@@ -26,23 +26,42 @@ python Denabase/data/download_satbench.py
 
 # 3. Initialize Database
 echo "[3/4] Initializing 'Denabase/my_database'..."
-if [ -d "Denabase/my_database" ]; then
-    echo "Warning: 'Denabase/my_database' already exists. Skipping initialization."
+DENABASE_PATH="Denabase/my_database"
+if [ -d "$DENABASE_PATH" ]; then
+    echo "Warning: '$DENABASE_PATH' already exists. Skipping initialization."
 else
-    python Denabase/Denabase/denabase_cli.py init Denabase/my_database
+    python Denabase/Denabase/denabase_cli.py init "$DENABASE_PATH"
 fi
 
-# 4. Ingest Full Training Set
-echo "[4/4] Ingesting SAT-Bench train set into 'Denabase/my_database'..."
-# Using the fast ingestion script with the newly downloaded training data
-python scripts/ingest_satbench_fast.py --db Denabase/my_database --manifest Denabase/data/satbench/satbench_train.jsonl
+# 4. Setup Environment Variables
+echo "[4/4] Configuring Environment..."
+if [ ! -f .env ]; then
+    echo "Creating .env file..."
+    echo "DENABASE_PATH=$DENABASE_PATH" > .env
+    echo "# Add your API keys here:" >> .env
+    echo "# OPENAI_API_KEY=sk-..." >> .env
+    echo "# GOOGLE_API_KEY=AIza..." >> .env
+else
+    # Append if not exists
+    if ! grep -q "DENABASE_PATH" .env; then
+        echo "Appending DENABASE_PATH to .env..."
+        echo "DENABASE_PATH=$DENABASE_PATH" >> .env
+    fi
+fi
 
-# 5. Generate Knowledge Graph
-echo "[5/5] Generating Knowledge Graph..."
-python scripts/visualize_db.py --db Denabase/my_database --nodes 600 --edges 2 || echo "Warning: Visualization failed."
+# 5. Ingest Full Training Set
+echo "[5/6] Ingesting SAT-Bench train set into '$DENABASE_PATH'..."
+# Using the fast ingestion script with the newly downloaded training data
+python scripts/ingest_satbench_fast.py --db "$DENABASE_PATH" --manifest Denabase/data/satbench/satbench_train.jsonl
+
+# 6. Repair & Visualize
+echo "[6/6] Ensuring Database Integrity & Visualizing..."
+# Run repair to ensure indices are built (fixes "NL embedder not ready" warnings)
+python scripts/repair_denabase.py --db "$DENABASE_PATH"
+python scripts/visualize_db.py --db "$DENABASE_PATH" --nodes 600 --edges 2 || echo "Warning: Visualization failed."
 
 echo ""
 echo "=== Setup Complete! ==="
-echo "You can now explore the knowledge graph: check 'denabase_graph.html'"
-echo "Or run queries like:"
-echo "python Denabase/Denabase/denabase_cli.py query Denabase/my_database --nl-text 'logical puzzle'"
+echo "You can now run benchmarks:"
+echo "export DENABASE_PATH=$DENABASE_PATH"
+echo "python bench/run_bench.py --id poly_pentomino_8x8_two_holes_unsat_area --provider openai"

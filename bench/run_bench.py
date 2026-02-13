@@ -529,7 +529,4 @@ if __name__ == "__main__":
     parser.add_argument("--api_key", type=str, help="API Key for Provider")
     parser.add_argument("--model", type=str, help="Model name (e.g. gemini-1.5-pro-latest)")
     parser.add_argument("--IR", type=str, default="pb", help="Intermediate Representation Backend (pb, minizinc, etc)")
-    parser.add_argument("--insecure", action="store_true", help="Bypass SSL certificate verification (macOS workaround)")
-    
-    args = parser.parse_args()
-    run_benchmark(args)
+    parser.add_argument("--insecure", action="store_true", help="Bypass SSL certificate verification (ma

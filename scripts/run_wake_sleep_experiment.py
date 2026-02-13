@@ -214,9 +214,4 @@ def run_experiment(args):
                 res = runner.run_sleep_cycle(min_freq=2, top_k=5)
                 logger.info(f"Sleep Cycle Result: {json.dumps(res, indent=2)}")
             except Exception as e:
-                logger.error(f"Sleep cycle failed: {e}", exc_info=True)
- 
-    logger.info("Experiment Completed.")
-
-if __name__ == "__main__":
-    main()
+                logger.error(f"Sleep 
