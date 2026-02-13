@@ -26,6 +26,11 @@ class DenabaseBridge:
     @classmethod
     def get_instance(cls, db_path: str = "denabase_db") -> 'DenabaseBridge':
         if cls._instance is None:
+            import os
+            # Prioritize env var if set
+            env_db = os.environ.get("DENABASE_PATH")
+            if env_db:
+                db_path = env_db
             cls._instance = cls(db_path)
         return cls._instance
 

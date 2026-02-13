@@ -1,7 +1,0 @@
-output ["pos = array4d(1..4, 0..19, 0..7, 0..7, ",showDzn(pos),");\n"];
-set of int: Coords_Y = 0..7;
-set of int: Coords_X = 0..7;
-set of int: Time = 0..19;
-set of int: Robots = 1..4;
-array [1..5120] of bool: X_INTRODUCED_0_;
-array [Robots,Time,Coords_X,Coords_Y] of bool: pos = array4d(1..4,0..19,0..7,0..7,X_INTRODUCED_0_);

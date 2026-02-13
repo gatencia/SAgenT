@@ -1,4 +1,0 @@
-output ["x = ",showDzn(x),";\n","p_0 = ",showDzn(p_0),";\n","p_1 = ",showDzn(p_1),";\n"];
-bool: p_1;
-bool: p_0;
-array [1..3] of bool: x;

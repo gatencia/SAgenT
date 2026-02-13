@@ -76,12 +76,15 @@ def main():
     
     # Load .env manually if needed (for keys)
     env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        with open(env_path) as f:
-            for line in f:
-                if "=" in line and not line.startswith("#"):
-                    k, v = line.strip().split("=", 1)
-                    os.environ[k] = v.strip().strip('"')
+    try:
+        if env_path.exists():
+            with open(env_path) as f:
+                for line in f:
+                    if "=" in line and not line.startswith("#"):
+                        k, v = line.strip().split("=", 1)
+                        os.environ[k] = v.strip().strip('"')
+    except Exception as e:
+        logger.warning(f"Could not load .env file: {e}")
 
     run_experiment(args)
 

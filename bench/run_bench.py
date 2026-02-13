@@ -342,9 +342,10 @@ Robot 1 Path: (1,1)->(1,0)->(0,0)
 
 def make_llm(provider: str, api_key: str = None, model: str = None, insecure: bool = False) -> Callable[[str], str]:
     if provider == "openai":
-        if not api_key: raise ValueError("API Key required for openai provider")
+        key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not key: raise ValueError("API Key required for openai provider (arg or OPENAI_API_KEY env)")
         m = model if model else "gpt-4-turbo-preview"
-        return lambda p: call_openai_api(p, api_key, m, insecure=insecure)
+        return lambda p: call_openai_api(p, key, m, insecure=insecure)
     elif provider == "google":
         key = api_key or os.environ.get("GOOGLE_API_KEY")
         if not key:

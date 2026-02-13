@@ -10,6 +10,7 @@ __pycache__/
 .DS_Store
 
 # sat bench ds
+PLAN.md
 data/
 Denabase/experiment_db
 Denabase/my_database
