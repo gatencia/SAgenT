@@ -52,16 +52,4 @@ fi
 # 5. Ingest Full Training Set
 echo "[5/6] Ingesting SAT-Bench train set into '$DENABASE_PATH'..."
 # Using the fast ingestion script with the newly downloaded training data
-python scripts/ingest_satbench_fast.py --db "$DENABASE_PATH" --manifest Denabase/data/satbench/satbench_train.jsonl
-
-# 6. Repair & Visualize
-echo "[6/6] Ensuring Database Integrity & Visualizing..."
-# Run repair to ensure indices are built (fixes "NL embedder not ready" warnings)
-python scripts/repair_denabase.py --db "$DENABASE_PATH"
-python scripts/visualize_db.py --db "$DENABASE_PATH" --nodes 600 --edges 2 || echo "Warning: Visualization failed."
-
-echo ""
-echo "=== Setup Complete! ==="
-echo "You can now run benchmarks:"
-echo "export DENABASE_PATH=$DENABASE_PATH"
-echo "python bench/run_bench.py --id poly_pentomino_8x8_two_holes_unsat_area --provider openai"
+python scripts/ingest_satbench_fast.py --db "$DE
