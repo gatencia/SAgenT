@@ -34,3 +34,4 @@ my_database/
 *.ozn
 memory/
 output.txt
+!Denabase/data/
