@@ -13,12 +13,7 @@
             "placements_must_be_disjoint": true,
             "covered_cells_must_match": "all_nonblocked_cells"
         },
-        "blocked": [
-            [
-                4,
-                2
-            ]
-        ],
+        "blocked": [],
         "pieces": [
             "F",
             "I",

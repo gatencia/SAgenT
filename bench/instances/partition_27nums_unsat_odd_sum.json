@@ -1,7 +1,7 @@
 {
     "id": "partition_27nums_unsat_odd_sum",
     "family": "number_partition",
-    "natural_language": "Decide if the numbers can be split into two subsets with equal sum. UNSAT because total sum is odd.",
+    "natural_language": "Decide if the numbers can be split into two subsets with equal sum. This instance is designed to be UNSAT.",
     "data": {
         "semantics": {
             "decision": "exists subset S such that sum(S) = total_sum/2"
