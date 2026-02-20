@@ -84,8 +84,48 @@ python3 bench/run_bench.py [ARGS]
 | **`--api_key <key>`** | Provide the API key manually instead of using `.env`. |
 
 ---
-
-## 🏗 Project Structure
+ 
+ ## 🐳 Run locally with Docker
+ 
+ This repository is fully containerized to ensure reproducibility across different machines.
+ 
+ ### A) Prerequisites
+ - **Docker Desktop** (or Docker + Docker Compose) installed on your machine.
+ 
+ ### B) Local Folder Setup
+ Before running the container, ensure you have the following directories in your project root (they will be created automatically if they don't exist):
+ - `./data`: Input data and instances.
+ - `./outputs`: Benchmarking results and run logs.
+ - `./models`: Database files (e.g., `Denabase/my_database`).
+ - `./logs`: Application logs.
+ 
+ ### C) Environment Setup
+ 1. Copy the example environment file:
+    ```bash
+    cp .env.example .env
+    ```
+ 2. Open `.env` and add your `GOOGLE_API_KEY` (or `OPENAI_API_KEY`).
+ 3. (Optional) Adjust the path variables if you want to map different local folders.
+ 
+ ### D) Build & Run Commands
+ We provide a `Makefile` to simplify common operations.
+ 
+ | Command | Description |
+ | :--- | :--- |
+ | `bash set_up.sh` | **Unified Setup**: Builds Docker image AND initializes the data inside the container. |
+ | `make bench ARGS="..."`| Run a benchmark (e.g. `make bench ARGS="--id some_id --provider google"`). |
+ | `make shell` | Open an interactive shell inside the container. |
+ | `make down` | Stop and remove containers. |
+ 
+ **Example Workflow for a new user:**
+ ```bash
+ bash set_up.sh
+ make bench ARGS="--id mrpp_8x8_4r_T20_sat_central_block --provider google --insecure"
+ ```
+ 
+ ---
+ 
+ ## 🏗 Project Structure
 
 - **`engine/`**: The core logic.
     - `agent.py`: The ReAct loop and tool-calling coordinator.

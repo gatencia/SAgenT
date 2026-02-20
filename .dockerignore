@@ -1,0 +1,12 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.DS_Store
+*.log
+.env
+tmp/
+memory/
+.pytest_cache
+Denabase.egg-info

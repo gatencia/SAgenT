@@ -1,0 +1,26 @@
+services:
+  app:
+    build: .
+    image: llmsat:latest
+    container_name: llmsat_app
+    env_file:
+      - .env
+    volumes:
+      - .:/workspace # Mount the whole project to allow real-time code editing
+      - ./data:/workspace/data # Mount local data directory for persistent outputs/inputs
+      - ./outputs:/workspace/outputs # Mount outputs directory
+      - ./models:/workspace/models # Mount models directory (e.g. Denabase)
+      - ./logs:/workspace/logs # Mount logs directory
+      # Internal cache mapping to prevent permission errors on Mac volumes
+      - llmsat_cache:/workspace/tmp
+    environment:
+      - DATA_DIR=/workspace/data
+      - OUTPUT_DIR=/workspace/outputs
+      - MODELS_DIR=/workspace/models
+      - CACHE_DIR=/workspace/tmp
+    # Run the container in interactive mode so it stays alive and handles console inputs
+    stdin_open: true
+    tty: true
+
+volumes:
+  llmsat_cache:

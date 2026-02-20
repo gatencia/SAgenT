@@ -374,16 +374,17 @@ def run_benchmark(args):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     instances_dir = os.path.join(base_dir, "instances")
     checkers_dir = os.path.join(base_dir, "checkers")
-    runs_dir = os.path.join(base_dir, "runs")
+    runs_dir = os.environ.get("OUTPUT_DIR", os.path.join(base_dir, "runs"))
+    memory_dir = os.environ.get("CACHE_DIR", "memory")
     
     # Cleanup old artifacts
     if os.path.exists("output.txt"): os.remove("output.txt")
     import shutil
     if os.path.exists("output_debug.json"): os.remove("output_debug.json")
-    if os.path.exists("memory"):
-        print(f"Cleaning up memory folder...")
-        for filename in os.listdir("memory"):
-            file_path = os.path.join("memory", filename)
+    if os.path.exists(memory_dir):
+        print(f"Cleaning up {memory_dir} folder...")
+        for filename in os.listdir(memory_dir):
+            file_path = os.path.join(memory_dir, filename)
             try:
                 if os.path.isfile(file_path) or os.path.islink(file_path):
                     os.unlink(file_path)
@@ -392,7 +393,7 @@ def run_benchmark(args):
             except Exception as e:
                 print(f"Failed to delete {file_path}. Reason: {e}")
     else:
-        os.makedirs("memory")
+        os.makedirs(memory_dir)
 
     if not os.path.exists(runs_dir):
         os.makedirs(runs_dir)
