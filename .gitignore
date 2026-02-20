@@ -11,6 +11,7 @@ __pycache__/
 
 # sat bench ds
 PLAN.md
+output.txt
 data/
 Denabase/experiment_db
 Denabase/my_database

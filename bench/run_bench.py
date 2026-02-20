@@ -531,4 +531,5 @@ if __name__ == "__main__":
     parser.add_argument("--IR", type=str, default="pb", help="Intermediate Representation Backend (pb, minizinc, etc)")
     parser.add_argument("--insecure", action="store_true", help="Bypass SSL checks")
     
-    args = par
+    args = parser.parse_args()
+    run_benchmark(args)

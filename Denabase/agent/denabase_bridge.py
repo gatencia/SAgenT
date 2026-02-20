@@ -179,4 +179,6 @@ class DenabaseBridge:
         if cnf_clauses:
             max_var = max(abs(l) for c in cnf_clauses for l in c)
             
-        doc = C
+        doc = CnfDocument(clauses=cnf_clauses, num_vars=max_var)
+        # Use add_cnf
+        return self.db.add_cnf(doc, family=family, problem_id=problem_id, meta=meta, verify=False)
