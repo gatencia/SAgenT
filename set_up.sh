@@ -19,11 +19,34 @@ if [ "$INSIDE_DOCKER" = "false" ]; then
         exit 1
     fi
 
-    # 1. Ensure local directories exist for volume mounting
+    # 1. Ensure local directories and .env exist for volume mounting
     echo "[1/3] Preparing local workspace..."
     mkdir -p data outputs models logs tmp
+    
+    if [ ! -f .env ]; then
+        echo "Initializing .env from .env.example..."
+        cp .env.example .env
+    fi
 
-    # 2. Build the Docker image
+    # 2. Interactive API Key Setup
+    if ! grep -q "API_KEY=AIza" .env && ! grep -q "API_KEY=sk-" .env; then
+        echo ""
+        echo "--- LLM API Configuration ---"
+        echo "No API keys detected in your .env file."
+        echo "Which provider would you like to use? (google/openai/none)"
+        read -p "Provider: " PROVIDER
+        
+        if [ "$PROVIDER" = "google" ]; then
+            read -p "Enter your Google Gemini API Key: " API_KEY
+            sed -i.bak "s/GOOGLE_API_KEY=.*/GOOGLE_API_KEY=$API_KEY/" .env && rm .env.bak
+        elif [ "$PROVIDER" = "openai" ]; then
+            read -p "Enter your OpenAI API Key: " API_KEY
+            sed -i.bak "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=$API_KEY/" .env && rm .env.bak
+        fi
+        echo "Configuration saved to .env"
+    fi
+
+    # 3. Build the Docker image
     echo "[2/3] Building Docker image..."
     docker compose build
 
